@@ -1,7 +1,15 @@
 // 담당자 3 (AI 행동 계획 / 검증→계획 흐름) 소유
 // 준비 계획 API 연결 전까지 목업으로 UI·편집·추가·완료 체크를 확인한다.
 import React, { useRef, useState } from "react";
-import { View, Text, ScrollView, Pressable, StyleSheet, Modal } from "react-native";
+import {
+  View,
+  Text,
+  ScrollView,
+  Pressable,
+  StyleSheet,
+  Modal,
+  Alert,
+} from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import Card from "../components/Card";
@@ -11,13 +19,32 @@ import { colors, spacing, type, radius } from "../theme/theme";
 import { actionPlan } from "../data/mockData";
 import { formatStepDate, formatDeadline, formatDuration, getDday, sortPlanSteps } from "../utils/preparationPlan";
 
+import { db } from "../services/firebase";
+import {
+  doc,
+  writeBatch,
+  serverTimestamp,
+} from "firebase/firestore";
+
+import { saveTodosForDocument } from "../services/todoService";
+
+
 // 첨부 화면의 색상은 이 화면에만 적용하고 앱 공통 디자인 토큰은 유지한다.
 const planColors = {
   ink: "#181C43", accent: "#5B50D6", soft: "#F0EFFF", border: "#DAD6FF",
   green: "#50AE83", alert: "#E34B60", alertSoft: "#FCECF0",
 };
 
-export default function ActionPlanScreen({ navigation }) {
+export default function ActionPlanScreen({ navigation, route }) {
+  const params = route.params ?? {};
+
+  const documentId = params.documentId;
+
+  const documentTitle =
+    params.view?.title ??
+    params.analysis?.title ??
+    actionPlan.title;
+
   const [steps, setSteps] = useState(() => sortPlanSteps(actionPlan.steps.map((step) => ({ ...step, done: step.isDeadline ? false : step.done }))));
   const [editorMode, setEditorMode] = useState(null);
   const [showPreview, setShowPreview] = useState(false);
@@ -39,6 +66,60 @@ export default function ActionPlanScreen({ navigation }) {
     setEditorMode(null);
   };
 
+    const handleRegister = async () => {
+      if (!documentId) {
+        Alert.alert(
+          "등록 실패",
+          "원본 문서 ID를 찾을 수 없습니다."
+        );
+        return;
+      }
+
+      try {
+        const batch = writeBatch(db);
+
+        const todoSteps = steps.filter(
+          (step) => !step.isDeadline
+        );
+
+        todoSteps.forEach((step, index) => {
+          const todoRef = doc(
+            db,
+            "todos",
+            `${documentId}_${step.id}`
+          );
+
+          batch.set(todoRef, {
+            document_id: documentId,
+            doc_title: documentTitle,
+            title: step.label,
+            date: step.date ?? null,
+            time: step.time ?? null,
+            is_completed: step.done ?? false,
+            order: index,
+            created_at: serverTimestamp(),
+            updated_at: serverTimestamp(),
+          });
+        });
+
+        await batch.commit();
+
+        setShowPreview(false);
+
+        navigation.navigate("Management", {
+          documentId,
+          documentTitle,
+        });
+      } catch (error) {
+        console.error("Todo 등록 실패:", error);
+
+        Alert.alert(
+          "등록 실패",
+          "할 일을 저장하지 못했습니다."
+        );
+      }
+    };
+
   return (
     <SafeAreaView style={styles.safe} edges={["top", "bottom"]}>
       <View style={styles.backRow}>
@@ -57,7 +138,7 @@ export default function ActionPlanScreen({ navigation }) {
       <ScrollView contentContainerStyle={styles.container}>
         <Card style={styles.planCard}>
           <View style={styles.summary}>
-            <Text style={styles.documentTitle}>{actionPlan.title}</Text>
+            <Text style={styles.documentTitle}>{documentTitle}</Text>
             <View style={styles.deadlineRow}>
               <View style={styles.deadlineInfo}>
                 <Text style={styles.deadlineLabel}>최종 마감일</Text>
@@ -117,7 +198,7 @@ export default function ActionPlanScreen({ navigation }) {
         <SafeAreaView style={styles.previewOverlay}>
           <Card style={styles.previewCard}>
             <Text style={styles.previewTitle}>등록 미리보기</Text>
-            <Text style={styles.previewDescription}>{actionPlan.title}{"\n"}{formatDeadline(deadline)} 마감 · 준비 일정 {completedCount}/{preparationSteps.length} 완료</Text>
+            <Text style={styles.previewDescription}> {documentTitle}{"\n"} {formatDeadline(deadline)} 마감 · 준비 일정 {completedCount}/{preparationSteps.length} 완료 </Text>
             <ScrollView style={styles.previewList}>
               {steps.map((step) => (
                 <View key={step.id} style={styles.previewRow}>
@@ -129,8 +210,8 @@ export default function ActionPlanScreen({ navigation }) {
                 </View>
               ))}
             </ScrollView>
-            <Text style={styles.previewNote}>목업 미리보기입니다. 실제 할 일·캘린더 저장은 아직 연결되지 않았습니다.</Text>
-            <PrimaryButton label="확인" onPress={() => setShowPreview(false)} style={styles.previewButton} />
+            <Text style={styles.previewNote}> 등록하면 준비 일정이 할 일 목록에 저장됩니다. </Text>
+            <PrimaryButton label="등록하기" onPress={handleRegister} style={styles.previewButton} />
           </Card>
         </SafeAreaView>
       </Modal>
