@@ -9,6 +9,7 @@ import AIAnalysisScreen from "../screens/AIAnalysisScreen";
 import EvidenceCheckScreen from "../screens/EvidenceCheckScreen";
 import ActionPlanScreen from "../screens/ActionPlanScreen";
 import ManagementScreen from "../screens/ManagementScreen";
+import CalendarScreen from "../screens/CalendarScreen";
 
 const Stack = createNativeStackNavigator();
 
@@ -33,6 +34,7 @@ export default function AppNavigator() {
         <Stack.Screen name="EvidenceCheck" component={EvidenceCheckScreen} options={{ headerShown: false }} />
         <Stack.Screen name="ActionPlan" component={ActionPlanScreen} options={{ headerShown: false }} />
         <Stack.Screen name="Management" component={ManagementScreen} options={{ title: "등록 후 관리" }} />
+        <Stack.Screen name="Calendar" component={CalendarScreen} options={{ title: "캘린더" }} />
       </Stack.Navigator>
     </NavigationContainer>
   );

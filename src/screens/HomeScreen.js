@@ -110,9 +110,15 @@ export default function HomeScreen({ navigation }) {
           </View>
           <Text style={styles.brand}>똑독</Text>
         </View>
-        <Pressable hitSlop={8}>
-          <Ionicons name="notifications-outline" size={22} color={colors.ink} />
-        </Pressable>
+        <View style={styles.headerIcons}>
+          <Pressable hitSlop={8} accessibilityRole="button" accessibilityLabel="캘린더"
+            onPress={() => navigation.navigate("Calendar")}>
+            <Ionicons name="calendar-outline" size={22} color={colors.ink} />
+          </Pressable>
+          <Pressable hitSlop={8}>
+            <Ionicons name="notifications-outline" size={22} color={colors.ink} />
+          </Pressable>
+        </View>
       </View>
 
       <ScrollView contentContainerStyle={styles.container}>
@@ -221,6 +227,7 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.md,
   },
   brandRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
+  headerIcons: { flexDirection: "row", alignItems: "center", gap: spacing.lg },
   logoDot: {
     width: 28,
     height: 28,
