@@ -8,7 +8,7 @@ import { CalendarDateField, TimeSelectionField } from "./PlanDateTimeFields";
 import { colors, spacing, radius, type } from "../theme/theme";
 import { durationFromParts, formatStepDate, validatePlanStep } from "../utils/preparationPlan";
 
-const accent = "#5B50D6";
+const accent = colors.stamp;
 
 function makeForm(step, defaultDate) {
   return {

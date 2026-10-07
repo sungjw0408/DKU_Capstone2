@@ -1,5 +1,3 @@
-// 담당자 3 (AI 행동 계획 / 검증→계획 흐름) 소유
-// 문서 분석 결과로 준비 항목을 표시하고, 날짜와 소요시간은 사용자가 지정한다.
 import React, { useCallback, useRef, useState } from "react";
 import { useFocusEffect } from "@react-navigation/native";
 import { View, Text, ScrollView, Pressable, StyleSheet, Modal } from "react-native";
@@ -12,10 +10,12 @@ import { colors, spacing, type, radius } from "../theme/theme";
 import { actionPlan } from "../data/mockData";
 import { getDocument, savePlan, registerPlan } from "../services/api";
 import { createDocumentPlan, formatStepDate, formatDeadline, formatDuration, getDday, sortPlanSteps } from "../utils/preparationPlan";
+import { ddayTone, DDAY_COLORS } from "../utils/dday";
+import { daysUntil } from "../utils/todoManagement";
 
 // 첨부 화면의 색상은 이 화면에만 적용하고 앱 공통 디자인 토큰은 유지한다.
 const planColors = {
-  ink: "#181C43", accent: "#5B50D6", soft: "#F0EFFF", border: "#DAD6FF",
+    ink: "#181C43", accent: colors.stamp, soft: colors.stampSoft, border: "#C9D7FB",
   green: "#50AE83", alert: "#E34B60", alertSoft: "#FCECF0",
 };
 
@@ -148,8 +148,10 @@ function ActionPlanContent({ navigation, plan, onReload }) {
                 <Text style={styles.deadlineLabel}>최종 마감일</Text>
                 <Text style={styles.deadlineValue}>{formatDeadline(deadline)}</Text>
               </View>
-              <View style={styles.ddayBadge}>
-                <Text style={styles.ddayText}>{getDday(deadline?.date, plan.referenceDate)}</Text>
+              <View style={[styles.ddayBadge, { backgroundColor: DDAY_COLORS[ddayTone(daysUntil(deadline?.date))].bg }]}>
+                <Text style={[styles.ddayText, { color: DDAY_COLORS[ddayTone(daysUntil(deadline?.date))].fg }]}>
+                  {getDday(deadline?.date, plan.referenceDate)}
+                </Text>
               </View>
             </View>
             {plan.requiredDocs.length > 0 && <Text style={styles.requiredDocs}>필요 서류: {plan.requiredDocs.join(", ")}</Text>}
@@ -270,7 +272,7 @@ const styles = StyleSheet.create({
   stepDetail: { ...type.small, lineHeight: 19, fontWeight: "500" },
   deadlineDate: { color: "#B33981" },
   deadlineTime: { color: "#E46241", fontWeight: "700", fontSize: 13 },
-  addButton: { margin: spacing.lg, marginTop: spacing.sm, flexDirection: "row", justifyContent: "center", alignItems: "center", gap: spacing.xs, minHeight: 50, backgroundColor: planColors.soft, borderWidth: 1, borderColor: "#E9E6FF", borderRadius: radius.md },
+  addButton: { margin: spacing.lg, marginTop: spacing.sm, flexDirection: "row", justifyContent: "center", alignItems: "center", gap: spacing.xs, minHeight: 50, backgroundColor: planColors.soft, borderWidth: 1, borderColor: planColors.border, borderRadius: radius.md },
   addText: { ...type.bodyStrong, color: planColors.accent },
   registerButton: { backgroundColor: planColors.accent, minHeight: 52, justifyContent: "center", marginTop: spacing.lg },
   mockNote: { ...type.small, fontSize: 10, textAlign: "center", marginTop: spacing.sm, lineHeight: 16 },

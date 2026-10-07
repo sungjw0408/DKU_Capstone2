@@ -11,13 +11,7 @@ import { colors, spacing, type, radius } from "../theme/theme";
 import { listDocuments, getDocument, listTodos, updateTodo } from "../services/api";
 import { localPlanDate } from "../utils/preparationPlan";
 import { upcomingDocuments, ddayLabel, planProgress } from "../utils/homeData";
-
-const ddayTone = (dday) => {
-  const daysLeft = Math.abs(dday);
-  if (daysLeft <= 6) return "alert";
-  if (daysLeft <= 13) return "gold";
-  return "green";
-};
+import { ddayTone } from "../utils/dday";
 
 const todayLabel = () => {
   const days = ["일", "월", "화", "수", "목", "금", "토"];
@@ -64,12 +58,21 @@ export default function HomeScreen({ navigation }) {
     } finally { setBusyTaskId(null); }
   };
 
-  const openDocument = async (id) => {
+  const openDocument = async (item) => {
+    console.log("카드 누름:", item.title, "등록됨:", item.registered);
     if (openingId) return;
-    setOpeningId(id);
+
+    // 등록을 마친 문서는 바로 관리 화면으로 (할 일 확인·체크)
+    if (item.registered) {
+      navigation.navigate("Management", { documentId: item.id, documentTitle: item.title });
+      return;
+    }
+
+    // 아직 등록 전이면 지금처럼 분석 결과부터 (계획을 마저 세우도록)
+    setOpeningId(item.id);
     setError("");
     try {
-      const result = await getDocument(id);
+      const result = await getDocument(item.id);
       navigation.navigate("AIAnalysis", { ...result, preview: { kind: result.sourceKind } });
     } catch (e) { setError(e.message); }
     finally { setOpeningId(null); }
@@ -83,11 +86,11 @@ export default function HomeScreen({ navigation }) {
       {list.length === 0 && <Text style={type.small}>{emptyLabel}</Text>}
       {list.map((item, idx) => (
         <Pressable key={item.id} accessibilityRole="button" accessibilityLabel={`${item.title} 문서 열기`}
-          disabled={!!openingId} onPress={() => openDocument(item.id)}
+          disabled={!!openingId} onPress={() => openDocument(item)}
           style={[styles.upcomingItem, idx > 0 && styles.upcomingDivider]}>
           <View style={styles.upcomingRow}>
             <Text style={[type.bodyStrong, { flex: 1, marginRight: spacing.sm }]}>{item.title}</Text>
-            <Badge label={ddayLabel(item.dday)} tone={ddayTone(item.dday)} />
+            <Badge label={ddayLabel(item.dday)} tone={ddayTone(-item.dday)} />
           </View>
           <View style={{ marginTop: spacing.sm }}>
             <ProgressBar progress={item.progress || 0} color={colors.green} />
@@ -110,9 +113,15 @@ export default function HomeScreen({ navigation }) {
           </View>
           <Text style={styles.brand}>똑독</Text>
         </View>
-        <Pressable hitSlop={8}>
-          <Ionicons name="notifications-outline" size={22} color={colors.ink} />
-        </Pressable>
+        <View style={styles.headerIcons}>
+          <Pressable hitSlop={8} accessibilityRole="button" accessibilityLabel="캘린더"
+            onPress={() => navigation.navigate("Calendar")}>
+            <Ionicons name="calendar-outline" size={22} color={colors.ink} />
+          </Pressable>
+          <Pressable hitSlop={8}>
+            <Ionicons name="notifications-outline" size={22} color={colors.ink} />
+          </Pressable>
+        </View>
       </View>
 
       <ScrollView contentContainerStyle={styles.container}>
@@ -221,6 +230,7 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.md,
   },
   brandRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
+  headerIcons: { flexDirection: "row", alignItems: "center", gap: spacing.lg },
   logoDot: {
     width: 28,
     height: 28,
