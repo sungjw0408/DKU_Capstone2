@@ -1,4 +1,5 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import { useFocusEffect } from "@react-navigation/native";
 import {
   View, Text, Pressable, StyleSheet, ActivityIndicator, TextInput, Alert, Platform,
   KeyboardAvoidingView, ScrollView,
@@ -9,7 +10,7 @@ import * as ImagePicker from "expo-image-picker";
 import * as DocumentPicker from "expo-document-picker";
 import PrimaryButton from "../components/PrimaryButton";
 import { colors, spacing, type, radius } from "../theme/theme";
-import { analyzeFile, analyzeText } from "../services/api";
+import { analyzeFile, analyzeText, retryDocument, listDocuments } from "../services/api";
 
 const INPUT_METHODS = [
   { id: "camera", label: "사진 촬영", desc: "공지문을 바로 찍어서 추가해요",
@@ -70,20 +71,33 @@ export default function DocumentAddScreen({ navigation }) {
   const [textMode, setTextMode] = useState(false);
   const [text, setText] = useState("");
   const [focused, setFocused] = useState(false);
+  const [pendingDocumentId, setPendingDocumentId] = useState(null);
   const timer = useRef(null);
 
   useEffect(() => () => clearInterval(timer.current), []);
+
+  useFocusEffect(useCallback(() => {
+    let active = true;
+    // 새로고침·서버 재시작 뒤에도 분석 실패 문서를 재업로드 없이 다시 시도한다.
+    listDocuments().then((documents) => {
+      const pending = documents.find((document) => document.status === "analysis_failed");
+      if (active && pending) setPendingDocumentId((current) => current || pending.id);
+    }).catch(() => { /* 일반 업로드는 그대로 사용할 수 있다. */ });
+    return () => { active = false; };
+  }, []));
 
   const run = async (task, preview) => {
     setAnalyzing(true);
     setStage(0);
     timer.current = setInterval(() => setStage((s) => Math.min(s + 1, STAGES.length - 1)), 2500);
     try {
-      const { documentId, view, analysis } = await task();
+      const { documentId, view, analysis, sourceKind } = await task();
+      setPendingDocumentId(null);
       setTextMode(false);
       setText("");
-      navigation.navigate("AIAnalysis", { documentId, view, analysis, preview });
+      navigation.navigate("AIAnalysis", { documentId, view, analysis, preview: { ...preview, kind: sourceKind || preview?.kind } });
     } catch (e) {
+      setPendingDocumentId(e.documentId || null);
       showError(e.message);
     } finally {
       clearInterval(timer.current);
@@ -186,6 +200,9 @@ export default function DocumentAddScreen({ navigation }) {
               disabled={!ready}
               onPress={() => run(() => analyzeText(text), { kind: "text" })}
             />
+            {pendingDocumentId && <PrimaryButton label="저장된 원문으로 다시 분석" tone="stamp"
+              style={{ marginTop: spacing.sm }}
+              onPress={() => run(() => retryDocument(pendingDocumentId), { kind: "text" })} />}
             <Pressable onPress={() => setTextMode(false)} style={styles.backLink} hitSlop={8}>
               <Text style={styles.backLinkText}>다른 방법으로 추가하기</Text>
             </Pressable>
@@ -200,6 +217,10 @@ export default function DocumentAddScreen({ navigation }) {
       <ScrollView contentContainerStyle={styles.container}>
         <Text style={type.h1}>문서 추가하기</Text>
         <Text style={styles.subtitle}>다양한 방법으로 문서를 공유할 수 있어요</Text>
+        {pendingDocumentId && <View style={{ marginBottom: spacing.lg }}>
+          <PrimaryButton label="저장된 원문으로 다시 분석" tone="stamp"
+            onPress={() => run(() => retryDocument(pendingDocumentId), { kind: "text" })} />
+        </View>}
 
         <View style={styles.list}>
           {INPUT_METHODS.filter((m) => !m.soon).map((m) => (

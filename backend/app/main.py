@@ -1,5 +1,8 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from google.api_core.exceptions import GoogleAPICallError
+from google.auth.exceptions import GoogleAuthError
 
 from app.api.routes import router
 from app.config import get_settings
@@ -18,6 +21,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.include_router(router)
+
+
+@app.exception_handler(GoogleAPICallError)
+@app.exception_handler(GoogleAuthError)
+async def storage_error(request, exc):
+    return JSONResponse(status_code=503, content={"detail": "문서 저장소에 연결하지 못했습니다. 잠시 후 다시 시도해 주세요."})
 
 
 @app.get("/health")

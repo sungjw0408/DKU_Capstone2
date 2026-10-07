@@ -22,8 +22,11 @@ async function request(path, options = {}) {
   }
   const body = await res.json().catch(() => ({}));
   if (!res.ok) {
-    const detail = typeof body.detail === "string" ? body.detail : JSON.stringify(body.detail ?? body);
-    throw new Error(detail || `요청 실패 (${res.status})`);
+    const detail = typeof body.detail === "string" ? body.detail : body.detail?.message || JSON.stringify(body.detail ?? body);
+    const error = new Error(detail || `요청 실패 (${res.status})`);
+    error.status = res.status;
+    error.documentId = body.detail?.documentId;
+    throw error;
   }
   return body;
 }
@@ -55,6 +58,18 @@ export async function analyzeFile(asset) {
 export const listDocuments = () => request("/api/documents");
 export const getDocument = (id) => request(`/api/documents/${id}`);
 export const getSource = (id) => request(`/api/documents/${id}/source`);
+export const retryDocument = (id) => request(`/api/documents/${encodeURIComponent(id)}/retry`, { method: "POST" });
+export const savePlan = (id, steps, revision) => request(`/api/documents/${encodeURIComponent(id)}/plan`, {
+  method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ steps, revision }),
+});
+export const registerPlan = (id, steps, revision) => request(`/api/documents/${encodeURIComponent(id)}/plan/register`, {
+  method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ steps, revision }),
+});
+export const listTodos = (documentId) => request(`/api/todos${documentId ? `?document_id=${encodeURIComponent(documentId)}` : ""}`);
+export const updateTodo = (id, completed) => request(`/api/todos/${encodeURIComponent(id)}`, {
+  method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ is_completed: completed }),
+});
+export const deleteTodo = (id) => request(`/api/todos/${encodeURIComponent(id)}`, { method: "DELETE" });
 
 // '확인 필요' 항목 승인(수정값 선택) → 갱신된 { view, analysis }
 export function confirmField(docId, fieldId, patch = {}) {

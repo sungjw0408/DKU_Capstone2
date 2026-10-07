@@ -1,4 +1,5 @@
-import React, { useState } from "react";
+import React, { useCallback, useState } from "react";
+import { useFocusEffect } from "@react-navigation/native";
 import { View, Text, ScrollView, Pressable, StyleSheet } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -7,7 +8,9 @@ import Badge from "../components/Badge";
 import ProgressBar from "../components/ProgressBar";
 import PrimaryButton from "../components/PrimaryButton";
 import { colors, spacing, type, radius } from "../theme/theme";
-import { todayTasks, homeUpcoming } from "../data/mockData";
+import { listDocuments, getDocument, listTodos, updateTodo } from "../services/api";
+import { localPlanDate } from "../utils/preparationPlan";
+import { upcomingDocuments, ddayLabel, planProgress } from "../utils/homeData";
 
 const ddayTone = (dday) => {
   const daysLeft = Math.abs(dday);
@@ -24,38 +27,74 @@ const todayLabel = () => {
 
 export default function HomeScreen({ navigation }) {
   const [tab, setTab] = useState("today");
-  const [tasks, setTasks] = useState(todayTasks);
+  const [tasks, setTasks] = useState([]);
+  const [documents, setDocuments] = useState([]);
   const [sortBy, setSortBy] = useState("dday");
-  const [expanded, setExpanded] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [busyTaskId, setBusyTaskId] = useState(null);
+  const [openingId, setOpeningId] = useState(null);
+  const [reload, setReload] = useState(0);
 
-  const toggleTask = (id) => {
-    setTasks((prev) =>
-      prev.map((t) => (t.id === id ? { ...t, done: !t.done } : t))
-    );
+  useFocusEffect(useCallback(() => {
+    let active = true;
+    setLoading(true);
+    setError("");
+    Promise.all([listDocuments(), listTodos()]).then(([docs, todos]) => {
+      if (!active) return;
+      setDocuments(docs);
+      setTasks(todos.filter((item) => item.date === localPlanDate()));
+    }).catch((e) => { if (active) setError(e.message); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [reload]));
+
+  const toggleTask = async (item) => {
+    if (busyTaskId) return;
+    const completed = !item.is_completed;
+    setBusyTaskId(item.id);
+    setTasks((prev) => prev.map((task) => task.id === item.id ? { ...task, is_completed: completed } : task));
+    try {
+      const { plan } = await updateTodo(item.id, completed);
+      if (plan) setDocuments((prev) => prev.map((document) => document.id === item.document_id
+        ? { ...document, progress: planProgress(plan) } : document));
+    } catch (e) {
+      setTasks((prev) => prev.map((task) => task.id === item.id ? { ...task, is_completed: item.is_completed } : task));
+      setError(e.message);
+    } finally { setBusyTaskId(null); }
   };
 
-  const sortedUpcoming = [...homeUpcoming].sort((a, b) => {
-    if (sortBy === "dday") return Math.abs(a.dday) - Math.abs(b.dday);
-    return 0; // 최신순은 mockData의 원래 순서 그대로
-  });
-  const previewUpcoming = [...homeUpcoming]
-  .sort((a, b) => Math.abs(a.dday) - Math.abs(b.dday))
-  .slice(0, 3);
+  const openDocument = async (id) => {
+    if (openingId) return;
+    setOpeningId(id);
+    setError("");
+    try {
+      const result = await getDocument(id);
+      navigation.navigate("AIAnalysis", { ...result, preview: { kind: result.sourceKind } });
+    } catch (e) { setError(e.message); }
+    finally { setOpeningId(null); }
+  };
 
+  const sortedUpcoming = upcomingDocuments(documents, sortBy);
+  const previewUpcoming = upcomingDocuments(documents).slice(0, 3);
+  const emptyLabel = loading ? "불러오는 중…" : error ? "문서를 불러오지 못했어요." : "다가오는 마감이 없습니다.";
   const renderUpcomingCard = (list) => (
-  <Card>
-    {list.map((item, idx) => (
-      <View key={item.id} style={[styles.upcomingItem, idx > 0 && styles.upcomingDivider]}>
-        <View style={styles.upcomingRow}>
-          <Text style={type.bodyStrong}>{item.title}</Text>
-          <Badge label={`D${item.dday}`} tone={ddayTone(item.dday)} />
-        </View>
-        <View style={{ marginTop: spacing.sm }}>
-          <ProgressBar progress={item.progress} color={colors.green} />
-        </View>
-      </View>
-    ))}
-  </Card>
+    <Card>
+      {list.length === 0 && <Text style={type.small}>{emptyLabel}</Text>}
+      {list.map((item, idx) => (
+        <Pressable key={item.id} accessibilityRole="button" accessibilityLabel={`${item.title} 문서 열기`}
+          disabled={!!openingId} onPress={() => openDocument(item.id)}
+          style={[styles.upcomingItem, idx > 0 && styles.upcomingDivider]}>
+          <View style={styles.upcomingRow}>
+            <Text style={[type.bodyStrong, { flex: 1, marginRight: spacing.sm }]}>{item.title}</Text>
+            <Badge label={ddayLabel(item.dday)} tone={ddayTone(item.dday)} />
+          </View>
+          <View style={{ marginTop: spacing.sm }}>
+            <ProgressBar progress={item.progress || 0} color={colors.green} />
+          </View>
+        </Pressable>
+      ))}
+    </Card>
   );
 
   return (
@@ -77,6 +116,9 @@ export default function HomeScreen({ navigation }) {
       </View>
 
       <ScrollView contentContainerStyle={styles.container}>
+        {!!error && <Text accessibilityRole="alert" style={[type.small, { color: colors.alert, marginBottom: spacing.md }]}>{error}</Text>}
+        {!!error && <Pressable accessibilityRole="button" disabled={loading} onPress={() => setReload((prev) => prev + 1)}
+          style={{ marginBottom: spacing.md }}><Text style={[type.bodyStrong, { color: colors.stamp }]}>다시 불러오기</Text></Pressable>}
         {/* 탭 버튼 */}
         <View style={styles.tabRow}>
           <Pressable
@@ -97,7 +139,7 @@ export default function HomeScreen({ navigation }) {
             <Text style={[styles.tabText, tab === "upcoming" && styles.tabTextActive]}>다가오는 마감</Text>
             <View style={[styles.countPill, tab === "upcoming" && styles.countPillActive]}>
               <Text style={[styles.countText, tab === "upcoming" && styles.countTextActive]}>
-                {homeUpcoming.length}
+                {sortedUpcoming.length}
               </Text>
             </View>
           </Pressable>
@@ -107,22 +149,24 @@ export default function HomeScreen({ navigation }) {
           <>
             <Text style={styles.sectionTitle}>{todayLabel()}</Text>
             <Card style={{ marginBottom: spacing.xl }}>
+              {tasks.length === 0 && <Text style={type.small}>{loading ? "불러오는 중…" : "오늘 등록된 할 일이 없습니다."}</Text>}
               {tasks.map((item, idx) => (
                 <Pressable
                   key={item.id}
-                  onPress={() => toggleTask(item.id)}
+                  accessibilityRole="checkbox" accessibilityLabel={`${item.title} 완료`} aria-checked={!!item.is_completed}
+                  disabled={!!busyTaskId} onPress={() => toggleTask(item)}
                   style={[styles.taskRow, idx > 0 && styles.rowDivider]}
                 >
                   <Ionicons
-                    name={item.done ? "checkbox" : "square-outline"}
+                    name={item.is_completed ? "checkbox" : "square-outline"}
                     size={22}
-                    color={item.done ? colors.stamp : colors.muted}
+                    color={item.is_completed ? colors.stamp : colors.muted}
                   />
                   <View style={{ flex: 1, marginLeft: spacing.sm }}>
-                    <Text style={[type.bodyStrong, item.done && styles.doneText]}>{item.title}</Text>
-                    <Text style={styles.taskSubtitle}>{item.subtitle}</Text>
+                    <Text style={[type.bodyStrong, item.is_completed && styles.doneText]}>{item.title}</Text>
+                    <Text style={styles.taskSubtitle}>{item.doc_title}</Text>
                   </View>
-                  <Text style={styles.taskDday}>{`D${item.dday}`}</Text>
+                  <Text style={styles.taskDday}>{ddayLabel(documents.find((document) => document.id === item.document_id)?.dday)}</Text>
                 </Pressable>
               ))}
             </Card>

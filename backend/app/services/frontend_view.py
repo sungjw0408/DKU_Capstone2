@@ -134,7 +134,7 @@ def to_analysis_detail(a: AnalysisResult) -> dict:
         "docType": a.doc_subtype,
         "docCategory": a.doc_category.value,
         "applicantCriteria": [{"text": c.value, "confidence": c.confidence} for c in criteria],
-        "todos": [{"id": f"t{i}", "text": t.value, "confidence": t.confidence} for i, t in enumerate(todos, 1)],
+        "todos": [{"id": t.id, "text": t.value, "confidence": t.confidence} for t in todos],
         "deadline": {"text": deadline.value, "confidence": deadline.confidence,
                      "datetime": deadline.normalized_datetime} if deadline else None,
         "requiredDocs": [d.value for d in docs],

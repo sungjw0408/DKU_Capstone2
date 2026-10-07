@@ -1,15 +1,8 @@
 // 담당자 3 (AI 행동 계획 / 검증→계획 흐름) 소유
-// 준비 계획 API 연결 전까지 목업으로 UI·편집·추가·완료 체크를 확인한다.
-import React, { useRef, useState } from "react";
-import {
-  View,
-  Text,
-  ScrollView,
-  Pressable,
-  StyleSheet,
-  Modal,
-  Alert,
-} from "react-native";
+// 문서 분석 결과로 준비 항목을 표시하고, 날짜와 소요시간은 사용자가 지정한다.
+import React, { useCallback, useRef, useState } from "react";
+import { useFocusEffect } from "@react-navigation/native";
+import { View, Text, ScrollView, Pressable, StyleSheet, Modal } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import Card from "../components/Card";
@@ -17,17 +10,8 @@ import PrimaryButton from "../components/PrimaryButton";
 import PlanEditorModal from "../components/PlanEditorModal";
 import { colors, spacing, type, radius } from "../theme/theme";
 import { actionPlan } from "../data/mockData";
-import { formatStepDate, formatDeadline, formatDuration, getDday, sortPlanSteps } from "../utils/preparationPlan";
-
-import { db } from "../services/firebase";
-import {
-  doc,
-  writeBatch,
-  serverTimestamp,
-} from "firebase/firestore";
-
-import { saveTodosForDocument } from "../services/todoService";
-
+import { getDocument, savePlan, registerPlan } from "../services/api";
+import { createDocumentPlan, formatStepDate, formatDeadline, formatDuration, getDday, sortPlanSteps } from "../utils/preparationPlan";
 
 // 첨부 화면의 색상은 이 화면에만 적용하고 앱 공통 디자인 토큰은 유지한다.
 const planColors = {
@@ -36,98 +20,120 @@ const planColors = {
 };
 
 export default function ActionPlanScreen({ navigation, route }) {
-  const params = route.params ?? {};
+  const { documentId, view, analysis } = route?.params || {};
+  const id = documentId || view?.id || analysis?.document_id;
+  const preview = __DEV__ && process.env.EXPO_PUBLIC_PREVIEW_SCREEN === "action-plan" && !id;
+  const [resource, setResource] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [reload, setReload] = useState(0);
 
-  const documentId = params.documentId;
+  useFocusEffect(useCallback(() => {
+    let active = true;
+    setLoading(true);
+    setError("");
+    const load = async () => {
+      if (preview) return { ...actionPlan, isMock: true, hasAnalysis: true, requiredDocs: [], revision: 0 };
+      if (!id) return createDocumentPlan();
+      const result = await getDocument(id);
+      const base = createDocumentPlan(result);
+      let saved = result.plan;
+      if (!saved) {
+        try { saved = (await savePlan(id, base.steps, 0)).plan; }
+        catch (e) {
+          if (e.status !== 409) throw e;
+          saved = (await getDocument(id)).plan;
+          if (!saved) throw e;
+        }
+      }
+      return { ...base, steps: saved.steps, revision: saved.revision, registered: saved.registered };
+    };
+    load().then((plan) => { if (active) setResource(plan); })
+      .catch((e) => { if (active) setError(e.message); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [id, preview, reload]));
 
-  const documentTitle =
-    params.view?.title ??
-    params.analysis?.title ??
-    actionPlan.title;
+  if (loading || error || !resource) return (
+    <SafeAreaView style={styles.safe}>
+      <View style={styles.container}>
+        <Text style={[type.body, { marginVertical: spacing.lg }]}>{error || "저장된 준비 계획을 불러오는 중…"}</Text>
+        {!!error && <PrimaryButton label="다시 불러오기" onPress={() => setReload((prev) => prev + 1)} />}
+        <Pressable accessibilityRole="button" accessibilityLabel="뒤로가기" style={styles.backButton}
+          onPress={() => navigation.canGoBack() ? navigation.goBack() : navigation.replace("Home")}>
+          <Ionicons name="chevron-back" size={24} color={planColors.ink} />
+        </Pressable>
+      </View>
+    </SafeAreaView>
+  );
+  return <ActionPlanContent key={`${resource.id}:${resource.revision || 0}`} navigation={navigation}
+    plan={resource} onReload={() => setReload((prev) => prev + 1)} />;
+}
 
-  const [steps, setSteps] = useState(() => sortPlanSteps(actionPlan.steps.map((step) => ({ ...step, done: step.isDeadline ? false : step.done }))));
+function ActionPlanContent({ navigation, plan, onReload }) {
+  const [steps, setSteps] = useState(() => sortPlanSteps(plan.steps.map((step) => ({ ...step, done: step.isDeadline ? false : step.done }))));
   const [editorMode, setEditorMode] = useState(null);
   const [showPreview, setShowPreview] = useState(false);
-  const nextId = useRef(1);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const revision = useRef(plan.revision || 0);
+  const busy = useRef(false);
   const deadline = steps.find((step) => step.isDeadline);
   const preparationSteps = steps.filter((step) => !step.isDeadline);
   const completedCount = preparationSteps.filter((step) => step.done).length;
 
-  const toggleStep = (id) => {
-    setSteps((prev) => prev.map((step) => step.id === id && !step.isDeadline ? { ...step, done: !step.done } : step));
+  const persist = async (nextSteps, register = false) => {
+    if (busy.current) return false;
+    busy.current = true;
+    setSaving(true);
+    setError("");
+    const previous = steps;
+    setSteps(nextSteps);
+    try {
+      if (!plan.isMock) {
+        const result = await (register ? registerPlan : savePlan)(plan.id, nextSteps, revision.current);
+        revision.current = result.plan.revision;
+        setSteps(result.plan.steps);
+      }
+      return true;
+    } catch (e) {
+      setSteps(previous);
+      setError(e.message);
+      throw e;
+    } finally { busy.current = false; setSaving(false); }
   };
 
-  const saveStep = (step) => {
+  const toggleStep = async (id) => {
+    if (busy.current) return;
+    try { await persist(steps.map((step) => step.id === id && !step.isDeadline ? { ...step, done: !step.done } : step)); }
+    catch (_) { /* persist가 오류와 이전 체크 상태를 화면에 반영한다. */ }
+  };
+
+  const saveStep = async (step) => {
     const normalizedStep = step.isDeadline ? { ...step, done: false } : step;
-    const savedStep = step.id ? normalizedStep : { ...normalizedStep, id: `custom-step-${nextId.current++}` };
-    setSteps((prev) => sortPlanSteps(step.id
-      ? prev.map((item) => item.id === step.id ? savedStep : item)
-      : [...prev, savedStep]));
-    setEditorMode(null);
+    const savedStep = step.id ? normalizedStep : { ...normalizedStep,
+      id: `custom-step-${Date.now()}-${Math.random().toString(36).slice(2, 10)}` };
+    const next = sortPlanSteps(step.id ? steps.map((item) => item.id === step.id ? savedStep : item) : [...steps, savedStep]);
+    if (await persist(next)) setEditorMode(null);
   };
 
-    const handleRegister = async () => {
-      if (!documentId) {
-        Alert.alert(
-          "등록 실패",
-          "원본 문서 ID를 찾을 수 없습니다."
-        );
-        return;
-      }
-
-      try {
-        const batch = writeBatch(db);
-
-        const todoSteps = steps.filter(
-          (step) => !step.isDeadline
-        );
-
-        todoSteps.forEach((step, index) => {
-          const todoRef = doc(
-            db,
-            "todos",
-            `${documentId}_${step.id}`
-          );
-
-          batch.set(todoRef, {
-            document_id: documentId,
-            doc_title: documentTitle,
-            title: step.label,
-            date: step.date ?? null,
-            time: step.time ?? null,
-            is_completed: step.done ?? false,
-            order: index,
-            created_at: serverTimestamp(),
-            updated_at: serverTimestamp(),
-          });
-        });
-
-        await batch.commit();
-
-        setShowPreview(false);
-
-        navigation.navigate("Management", {documentId, documentTitle,});
-        
-      } catch (error) {
-        console.error("Todo 등록 실패:", error);
-
-        Alert.alert(
-          "등록 실패",
-          "할 일을 저장하지 못했습니다."
-        );
-      }
-    };
+  const register = async () => {
+    if (plan.isMock) return setShowPreview(true);
+    try {
+      if (await persist(steps, true)) navigation.navigate("Management", { documentId: plan.id, documentTitle: plan.title });
+    } catch (_) { /* 저장 실패 시 계획 화면에 머문다. */ }
+  };
 
   return (
     <SafeAreaView style={styles.safe} edges={["top", "bottom"]}>
       <View style={styles.backRow}>
-        <Pressable accessibilityRole="button" accessibilityLabel="뒤로가기" hitSlop={8} onPress={() => navigation.canGoBack() ? navigation.goBack() : navigation.replace("Home")} style={styles.backButton}>
+        <Pressable accessibilityRole="button" accessibilityLabel="뒤로가기" disabled={saving} hitSlop={8} onPress={() => navigation.canGoBack() ? navigation.goBack() : navigation.replace("Home")} style={styles.backButton}>
           <Ionicons name="chevron-back" size={24} color={planColors.ink} />
         </Pressable>
       </View>
       <View style={styles.heading}>
         <Text style={styles.title}>AI가 만든 준비 계획</Text>
-        <Pressable accessibilityRole="button" onPress={() => setEditorMode("edit")} style={({ pressed }) => [styles.editButton, pressed && styles.pressed]}>
+        <Pressable accessibilityRole="button" disabled={saving} onPress={() => setEditorMode("edit")} style={({ pressed }) => [styles.editButton, pressed && styles.pressed]}>
           <Ionicons name="pencil-outline" size={16} color={planColors.accent} />
           <Text style={styles.editText}>수정하기</Text>
         </Pressable>
@@ -136,31 +142,35 @@ export default function ActionPlanScreen({ navigation, route }) {
       <ScrollView contentContainerStyle={styles.container}>
         <Card style={styles.planCard}>
           <View style={styles.summary}>
-            <Text style={styles.documentTitle}>{documentTitle}</Text>
+            <Text style={styles.documentTitle}>{plan.title}</Text>
             <View style={styles.deadlineRow}>
               <View style={styles.deadlineInfo}>
                 <Text style={styles.deadlineLabel}>최종 마감일</Text>
                 <Text style={styles.deadlineValue}>{formatDeadline(deadline)}</Text>
               </View>
               <View style={styles.ddayBadge}>
-                <Text style={styles.ddayText}>{getDday(deadline?.date, actionPlan.referenceDate)}</Text>
+                <Text style={styles.ddayText}>{getDday(deadline?.date, plan.referenceDate)}</Text>
               </View>
             </View>
+            {plan.requiredDocs.length > 0 && <Text style={styles.requiredDocs}>필요 서류: {plan.requiredDocs.join(", ")}</Text>}
           </View>
 
           <View style={styles.timeline}>
+            {!plan.hasAnalysis && <Text style={styles.emptyNote}>문서 분석 결과가 없습니다. 이전 화면에서 문서를 분석해 주세요.</Text>}
+            {plan.hasAnalysis && !preparationSteps.length && <Text style={styles.emptyNote}>문서에서 확인된 할 일이 없습니다. 필요한 일정을 직접 추가해 주세요.</Text>}
             {steps.map((step, index) => (
               <View key={step.id} style={styles.stepRow}>
                 <View style={styles.markerColumn}>
                   <View style={[styles.connector, index === steps.length - 1 && styles.lastConnector]} />
                   {step.isDeadline ? (
-                    <View accessible accessibilityLabel={`${step.label} 최종 마감 일정`} style={[styles.marker, styles.deadlineMarker]}>
+                    <View accessible accessibilityLabel={step.label === "최종 마감" ? "최종 마감 일정" : `${step.label} 최종 마감 일정`} style={[styles.marker, styles.deadlineMarker]}>
                       <Ionicons name="time-outline" size={16} color={colors.surface} />
                     </View>
                   ) : <Pressable
                     accessibilityRole="checkbox"
                     accessibilityLabel={`${step.label} 완료`}
                     aria-checked={step.done}
+                    disabled={saving}
                     hitSlop={8}
                     onPress={() => toggleStep(step.id)}
                     style={[styles.marker, step.done ? styles.completedMarker : styles.pendingMarker]}
@@ -180,23 +190,29 @@ export default function ActionPlanScreen({ navigation, route }) {
             ))}
           </View>
 
-          <Pressable accessibilityRole="button" onPress={() => setEditorMode("add")} style={({ pressed }) => [styles.addButton, pressed && styles.pressed]}>
+          <Pressable accessibilityRole="button" disabled={saving} onPress={() => setEditorMode("add")} style={({ pressed }) => [styles.addButton, pressed && styles.pressed]}>
             <Ionicons name="add" size={18} color={planColors.accent} />
             <Text style={styles.addText}>일정 추가하기</Text>
           </Pressable>
         </Card>
 
-        <PrimaryButton label="이대로 등록하기" onPress={() => setShowPreview(true)} style={styles.registerButton} />
-        <Text style={styles.mockNote}>예시 계획 · 편집 내용은 이 화면에서만 유지됩니다.</Text>
+        {!!error && <View>
+          <Text accessibilityRole="alert" style={[type.small, { color: colors.alert, marginTop: spacing.md }]}>{error}</Text>
+          <Pressable accessibilityRole="button" onPress={onReload}><Text style={styles.editText}>다시 불러오기</Text></Pressable>
+        </View>}
+        <PrimaryButton label={saving ? "저장 중…" : "이대로 등록하기"} disabled={saving || !plan.hasAnalysis}
+          onPress={register} style={styles.registerButton} />
+        <Text style={styles.mockNote}>{plan.isMock ? "예시 계획 · 편집 내용은 이 화면에서만 유지됩니다." : "문서 분석 결과 · 날짜와 소요시간은 직접 지정해 주세요.\n수정한 준비 계획은 자동 저장됩니다."}</Text>
       </ScrollView>
 
-      {editorMode && <PlanEditorModal mode={editorMode} steps={steps} onSave={saveStep} onClose={() => setEditorMode(null)} />}
+      {editorMode && <PlanEditorModal mode={editorMode} steps={steps} allowUndated={!plan.isMock} onSave={saveStep} onClose={() => setEditorMode(null)} />}
 
       <Modal visible={showPreview} transparent animationType="fade" onRequestClose={() => setShowPreview(false)}>
         <SafeAreaView style={styles.previewOverlay}>
           <Card style={styles.previewCard}>
             <Text style={styles.previewTitle}>등록 미리보기</Text>
-            <Text style={styles.previewDescription}> {documentTitle}{"\n"} {formatDeadline(deadline)} 마감 · 준비 일정 {completedCount}/{preparationSteps.length} 완료 </Text>
+            <Text style={styles.previewDescription}>{plan.title}{"\n"}{formatDeadline(deadline)} · 준비 일정 {completedCount}/{preparationSteps.length} 완료</Text>
+            {plan.requiredDocs.length > 0 && <Text style={styles.previewNote}>필요 서류: {plan.requiredDocs.join(", ")}</Text>}
             <ScrollView style={styles.previewList}>
               {steps.map((step) => (
                 <View key={step.id} style={styles.previewRow}>
@@ -208,8 +224,8 @@ export default function ActionPlanScreen({ navigation, route }) {
                 </View>
               ))}
             </ScrollView>
-            <Text style={styles.previewNote}> 등록하면 준비 일정이 할 일 목록에 저장됩니다. </Text>
-            <PrimaryButton label="등록하기" onPress={handleRegister} style={styles.previewButton} />
+            <Text style={styles.previewNote}>{plan.isMock ? "목업" : "등록 전"} 미리보기입니다. 실제 할 일·캘린더 저장은 아직 연결되지 않았습니다.</Text>
+            <PrimaryButton label="확인" onPress={() => setShowPreview(false)} style={styles.previewButton} />
           </Card>
         </SafeAreaView>
       </Modal>
@@ -234,6 +250,8 @@ const styles = StyleSheet.create({
   deadlineInfo: { flex: 1, gap: spacing.xs },
   deadlineLabel: { ...type.small, fontWeight: "600" },
   deadlineValue: { ...type.bodyStrong, color: planColors.ink, lineHeight: 21 },
+  requiredDocs: { ...type.small, lineHeight: 19, marginTop: spacing.md },
+  emptyNote: { ...type.small, lineHeight: 19, paddingVertical: spacing.lg },
   ddayBadge: { backgroundColor: planColors.alertSoft, paddingHorizontal: spacing.md, paddingVertical: spacing.sm, borderRadius: radius.md },
   ddayText: { fontSize: 18, fontWeight: "700", color: planColors.alert },
   timeline: { paddingHorizontal: spacing.lg },

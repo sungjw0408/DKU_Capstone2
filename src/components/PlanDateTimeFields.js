@@ -7,7 +7,7 @@ import { parsePlanDate } from "../utils/preparationPlan";
 const accent = "#5B50D6";
 const pad = (value) => String(value).padStart(2, "0");
 
-export function CalendarDateField({ value, onChange, minDate, maxDate }) {
+export function CalendarDateField({ value, onChange, minDate, maxDate, allowClear = false }) {
   const [open, setOpen] = useState(false);
   const selected = parsePlanDate(value);
   const [month, setMonth] = useState(() => selected ?? new Date());
@@ -72,6 +72,9 @@ export function CalendarDateField({ value, onChange, minDate, maxDate }) {
             </View>
           ))}
           {(minDate || maxDate) && <Text style={styles.hint}>{maxDate ? "최종 마감일까지 선택할 수 있어요." : "준비 일정 이후로 선택해 주세요."}</Text>}
+          {allowClear && <Pressable accessibilityRole="button" onPress={() => { onChange(""); setOpen(false); }} style={styles.actionButton}>
+            <Text style={styles.clearText}>날짜 미정으로 두기</Text>
+          </Pressable>}
         </View>
       )}
     </View>

@@ -31,34 +31,40 @@ function Field({ label, value, onChangeText, placeholder, keyboardType = "defaul
 }
 
 // 부모가 표시할 때 새로 마운트하므로 취소한 입력은 다음 편집에 남지 않는다.
-export default function PlanEditorModal({ mode, steps, onSave, onClose }) {
+export default function PlanEditorModal({ mode, steps, onSave, onClose, allowUndated = false }) {
   const [selectedId, setSelectedId] = useState(null);
-  const [form, setForm] = useState(() => makeForm(null, steps[0]?.date ?? ""));
+  const [form, setForm] = useState(() => makeForm(null, allowUndated ? "" : steps[0]?.date ?? ""));
   const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
   const selectedStep = steps.find((step) => step.id === selectedId);
   const deadline = steps.find((step) => step.isDeadline);
-  const lastPreparationDate = steps.filter((step) => !step.isDeadline).map((step) => step.date).sort().pop();
+  const lastPreparationDate = steps.filter((step) => !step.isDeadline && step.date).map((step) => step.date).sort().pop();
   const showList = mode === "edit" && !selectedId;
   const update = (key) => (value) => { setForm((prev) => ({ ...prev, [key]: value })); setError(""); };
   const selectStep = (step) => { setSelectedId(step.id); setForm(makeForm(step, "")); setError(""); };
   const backToList = () => { setSelectedId(null); setError(""); };
-  const save = () => {
-    const message = validatePlanStep(form, steps, selectedId);
+  const save = async () => {
+    if (saving) return;
+    const message = validatePlanStep(form, steps, selectedId, allowUndated);
     if (message) return setError(message);
-    onSave({
+    setSaving(true);
+    try { await onSave({
       ...selectedStep, id: selectedId, label: form.label.trim(), date: form.date.trim(), time: form.time.trim(),
+      deadlineText: selectedStep?.isDeadline && form.date.trim() !== selectedStep.date ? "" : selectedStep?.deadlineText,
       durationMinutes: durationFromParts(form.durationHours, form.durationMinutes),
       notes: form.notes.trim(), done: selectedStep?.done ?? false,
-    });
+    }); }
+    catch (e) { setError(e.message); }
+    finally { setSaving(false); }
   };
   return (
-    <Modal visible transparent animationType="fade" onRequestClose={onClose}>
+    <Modal visible transparent animationType="fade" onRequestClose={() => { if (!saving) onClose(); }}>
       <KeyboardAvoidingView style={styles.overlay} behavior={Platform.OS === "ios" ? "padding" : "height"}>
         <SafeAreaView style={styles.modalSafe} edges={["top", "bottom"]}>
           <Card style={styles.dialog}>
             <View style={styles.header}>
               <Text style={styles.title}>{showList ? "준비 계획 수정" : mode === "add" ? "일정 추가" : "일정 수정"}</Text>
-              <Pressable accessibilityRole="button" accessibilityLabel="편집 닫기" onPress={onClose} hitSlop={8} style={styles.iconButton}>
+              <Pressable accessibilityRole="button" accessibilityLabel="편집 닫기" disabled={saving} onPress={onClose} hitSlop={8} style={styles.iconButton}>
                 <Ionicons name="close" size={24} color={colors.ink} />
               </Pressable>
             </View>
@@ -81,6 +87,7 @@ export default function PlanEditorModal({ mode, steps, onSave, onClose }) {
                 <>
                   <Field label="일정 이름" value={form.label} onChangeText={update("label")} placeholder="예: 제출 서류 최종 확인" />
                   <CalendarDateField key={selectedId ?? "new"} value={form.date} onChange={update("date")}
+                    allowClear={allowUndated}
                     minDate={selectedStep?.isDeadline ? lastPreparationDate : undefined}
                     maxDate={selectedStep?.isDeadline ? undefined : deadline?.date} />
                   <TimeSelectionField label={selectedStep?.isDeadline ? "마감 시간 (선택)" : "시간 (선택)"} value={form.time} onChange={update("time")} />
@@ -102,11 +109,11 @@ export default function PlanEditorModal({ mode, steps, onSave, onClose }) {
             </ScrollView>
             {!showList && (
               <View style={styles.footer}>
-                <Pressable accessibilityRole="button" onPress={mode === "edit" ? backToList : onClose} style={styles.cancelButton}>
+                <Pressable accessibilityRole="button" disabled={saving} onPress={mode === "edit" ? backToList : onClose} style={styles.cancelButton}>
                   <Text style={styles.cancelText}>{mode === "edit" ? "목록으로" : "취소"}</Text>
                 </Pressable>
                 <View style={styles.saveButton}>
-                  <PrimaryButton label={mode === "add" ? "일정 추가하기" : "수정 저장하기"} onPress={save} style={styles.primary} />
+                  <PrimaryButton disabled={saving} label={saving ? "저장 중…" : mode === "add" ? "일정 추가하기" : "수정 저장하기"} onPress={save} style={styles.primary} />
                 </View>
               </View>
             )}

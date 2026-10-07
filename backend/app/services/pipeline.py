@@ -13,10 +13,11 @@ from app.schemas import AnalysisResult, SourceDocument
 from app.utils.text import split_sentences
 
 
-def analyze(source: SourceDocument, llm: LLMProvider, now: datetime | None = None) -> AnalysisResult:
+def analyze(source: SourceDocument, llm: LLMProvider, now: datetime | None = None,
+            document_id: str | None = None) -> AnalysisResult:
     settings = get_settings()
     now = now or datetime.now(ZoneInfo(settings.timezone))
     sentences = split_sentences(source)
     extracted = extraction.extract(sentences, llm, today=now.date().isoformat())
     verifier = Verifier(source, sentences, settings.review_threshold, now)
-    return verifier.verify(extracted, document_id=f"doc-{uuid.uuid4().hex[:10]}", provider=llm.name)
+    return verifier.verify(extracted, document_id=document_id or f"doc-{uuid.uuid4().hex[:10]}", provider=llm.name)
