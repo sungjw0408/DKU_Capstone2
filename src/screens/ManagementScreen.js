@@ -9,9 +9,11 @@ import { colors, spacing, type } from "../theme/theme";
 
 // 🔥 Firebase 모듈: deleteDoc 추가
 import { db } from "../services/firebase";
-import { collection, getDocs, query, orderBy, doc, updateDoc, deleteDoc } from "firebase/firestore";
+import { collection, getDocs, query, where, doc, updateDoc, deleteDoc } from "firebase/firestore";
 
-export default function ManagementScreen() {
+export default function ManagementScreen({ route }) {
+  const { documentId, documentTitle } = route.params ?? {};
+
   const [todoList, setTodoList] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -19,7 +21,15 @@ export default function ManagementScreen() {
   const fetchTodos = async () => {
     try {
       setLoading(true);
-      const q = query(collection(db, "todos"), orderBy("order", "asc"));
+
+      if (!documentId) {
+        console.warn("ManagementScreen에 documentId가 전달되지 않았습니다.");
+        setTodoList([]);
+        setLoading(false);
+        return;
+      }
+
+      const q = query( collection(db, "todos"), where("document_id", "==", documentId));
       const querySnapshot = await getDocs(q);
 
       const items = [];
@@ -40,7 +50,7 @@ export default function ManagementScreen() {
 
   useEffect(() => {
     fetchTodos();
-  }, []);
+  }, [documentId]);
 
   // 2. [수정: Update] 체크박스 누를 때 DB is_completed 반영
   const handleToggle = async (todoId, currentStatus) => {
@@ -96,9 +106,24 @@ export default function ManagementScreen() {
     );
   };
 
-  // 진행률 자동 계산
-  const completedCount = todoList.filter((item) => item.is_completed).length;
-  const progress = todoList.length > 0 ? completedCount / todoList.length : 0;
+  // document_id 기준으로 Todo를 문서별 그룹으로 묶기
+  const groupedTodos = todoList.reduce((groups, todo) => {
+    const documentId = todo.document_id ?? "unknown";
+
+    if (!groups[documentId]) {
+      groups[documentId] = {
+        documentId,
+        title: todo.doc_title ?? "제목 없는 문서",
+        todos: [],
+      };
+    }
+
+    groups[documentId].todos.push(todo);
+
+    return groups;
+  }, {});
+
+  const documentGroups = Object.values(groupedTodos);
 
   if (loading) {
     return (
@@ -115,50 +140,103 @@ export default function ManagementScreen() {
         <Text style={type.h1}>등록 후 관리</Text>
         <Text style={styles.subtitle}>마감일까지 진행 상황을 지켜볼게요</Text>
 
-        <Card style={styles.card}>
+        {documentGroups.length === 0 ? (
+    <Text style={styles.emptyText}>
+      등록된 할 일이 없습니다.
+    </Text>
+  ) : (
+    documentGroups.map((group) => {
+      const completedCount = group.todos.filter(
+        (item) => item.is_completed
+      ).length;
+
+      const progress =
+        group.todos.length > 0
+          ? completedCount / group.todos.length
+          : 0;
+
+      const sortedTodos = [...group.todos].sort(
+        (a, b) => (a.order ?? 0) - (b.order ?? 0)
+      );
+
+      return (
+        <Card
+          key={group.documentId}
+          style={styles.card}
+        >
           <Text style={type.bodyStrong}>
-            {todoList[0]?.doc_title || "할 일 목록"}
+            {group.title}
           </Text>
 
           <View style={{ marginVertical: spacing.md }}>
             <ProgressBar progress={progress} />
+
             <Text style={styles.progressLabel}>
-              {completedCount} / {todoList.length} 완료
+              {completedCount} / {group.todos.length} 완료
             </Text>
           </View>
 
-          {todoList.length === 0 ? (
-            <Text style={styles.emptyText}>등록된 할 일이 없습니다.</Text>
-          ) : (
-            todoList.map((item) => (
-              <View key={item.id} style={styles.stepRow}>
-                {/* 체크박스 & 텍스트 영역 */}
-                <Pressable
-                  style={styles.todoContent}
-                  onPress={() => handleToggle(item.id, item.is_completed)}
-                >
-                  <Ionicons
-                    name={item.is_completed ? "checkbox" : "square-outline"}
-                    size={20}
-                    color={item.is_completed ? colors.stamp : colors.muted}
-                  />
-                  <Text style={[type.body, item.is_completed && styles.doneText]}>
-                    {item.title}
-                  </Text>
-                </Pressable>
+          {sortedTodos.map((item) => (
+            <View
+              key={item.id}
+              style={styles.stepRow}
+            >
+              <Pressable
+                style={styles.todoContent}
+                onPress={() =>
+                  handleToggle(
+                    item.id,
+                    item.is_completed
+                  )
+                }
+              >
+                <Ionicons
+                  name={
+                    item.is_completed
+                      ? "checkbox"
+                      : "square-outline"
+                  }
+                  size={20}
+                  color={
+                    item.is_completed
+                      ? colors.stamp
+                      : colors.muted
+                  }
+                />
 
-                {/* 쓰레기통 삭제 버튼 */}
-                <Pressable
-                  style={styles.deleteButton}
-                  onPress={() => handleDelete(item.id, item.title)}
-                  hitSlop={8}
+                <Text
+                  style={[
+                    type.body,
+                    item.is_completed &&
+                      styles.doneText,
+                  ]}
                 >
-                  <Ionicons name="trash-outline" size={18} color={colors.muted} />
-                </Pressable>
-              </View>
-            ))
-          )}
+                  {item.title}
+                </Text>
+              </Pressable>
+
+              <Pressable
+                style={styles.deleteButton}
+                onPress={() =>
+                  handleDelete(
+                    item.id,
+                    item.title
+                  )
+                }
+                hitSlop={8}
+              >
+                <Ionicons
+                  name="trash-outline"
+                  size={18}
+                  color={colors.muted}
+                />
+              </Pressable>
+            </View>
+          ))}
         </Card>
+      );
+    })
+  )}
       </ScrollView>
     </SafeAreaView>
   );

@@ -106,10 +106,8 @@ export default function ActionPlanScreen({ navigation, route }) {
 
         setShowPreview(false);
 
-        navigation.navigate("Management", {
-          documentId,
-          documentTitle,
-        });
+        navigation.navigate("Management", {documentId, documentTitle,});
+        
       } catch (error) {
         console.error("Todo 등록 실패:", error);
 
