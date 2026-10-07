@@ -1,6 +1,6 @@
 // src/screens/ManagementScreen.js
 import React, { useState, useEffect } from "react";
-import { View, Text, ScrollView, Pressable, StyleSheet, ActivityIndicator, Alert } from "react-native";
+import { View, Text, ScrollView, Pressable, StyleSheet, ActivityIndicator, Alert, Platform } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import Card from "../components/Card";
@@ -77,34 +77,70 @@ export default function ManagementScreen({ route }) {
   };
 
   // 3. [삭제: Delete] ⭐ 쓰레기통 터치 시 확인 팝업 후 Firestore DB에서 영구 삭제
-  const handleDelete = (todoId, todoTitle) => {
-    Alert.alert(
-      "할 일 삭제",
-      `'${todoTitle}' 항목을 삭제하시겠습니까?`,
-      [
-        { text: "취소", style: "cancel" },
-        {
-          text: "삭제",
-          style: "destructive",
-          onPress: async () => {
-            // UI에서 즉시 제거
-            setTodoList((prev) => prev.filter((item) => item.id !== todoId));
-
-            // Firestore DB에서 실제 문서 삭제
-            try {
-              const todoDocRef = doc(db, "todos", todoId);
-              await deleteDoc(todoDocRef);
-              console.log(`DB 삭제 성공! [문서 ID: ${todoId}]`);
-            } catch (error) {
-              console.error("DB 삭제 실패:", error);
-              Alert.alert("오류", "DB에서 삭제하지 못했습니다. 다시 시도해 주세요.");
-              fetchTodos(); // 실패 시 DB 목록 다시 불러오기
-            }
-          },
-        },
-      ]
+  const performDelete = async (todoId) => {
+    // UI에서 먼저 제거
+    setTodoList((prev) =>
+      prev.filter((item) => item.id !== todoId)
     );
+
+    try {
+      // Firestore의 해당 Todo 문서 참조
+      const todoDocRef = doc(db, "todos", todoId);
+
+      // Firestore에서 실제 삭제
+      await deleteDoc(todoDocRef);
+
+      console.log(`DB 삭제 성공! [문서 ID: ${todoId}]`);
+    } catch (error) {
+      console.error("DB 삭제 실패:", error);
+
+      // 삭제 실패 시 Firestore에서 다시 조회해서 화면 복구
+      await fetchTodos();
+
+      if (Platform.OS === "web") {
+        window.alert(
+          "DB에서 삭제하지 못했습니다. 다시 시도해 주세요."
+        );
+      } else {
+        Alert.alert(
+          "오류",
+          "DB에서 삭제하지 못했습니다. 다시 시도해 주세요."
+        );
+      }
+    }
   };
+
+const handleDelete = (todoId, todoTitle) => {
+  // 웹 환경
+  if (Platform.OS === "web") {
+    const confirmed = window.confirm(
+      `'${todoTitle}' 항목을 삭제하시겠습니까?`
+    );
+
+    if (confirmed) {
+      performDelete(todoId);
+    }
+
+    return;
+  }
+
+  // Android / iOS 환경
+  Alert.alert(
+    "할 일 삭제",
+    `'${todoTitle}' 항목을 삭제하시겠습니까?`,
+    [
+      {
+        text: "취소",
+        style: "cancel",
+      },
+      {
+        text: "삭제",
+        style: "destructive",
+        onPress: () => performDelete(todoId),
+      },
+    ]
+  );
+};
 
   // document_id 기준으로 Todo를 문서별 그룹으로 묶기
   const groupedTodos = todoList.reduce((groups, todo) => {
