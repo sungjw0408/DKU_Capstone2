@@ -247,11 +247,38 @@ def list_todos(document_id: str | None = None):
 
 @router.patch("/todos/{item_id}")
 def update_todo(item_id: str, body: TodoPatch):
+    changes = body.model_dump(
+        exclude_unset=True
+    )
+
+    if not changes:
+        raise HTTPException(
+            422,
+            "수정할 내용이 없습니다."
+        )
+
     try:
-        plan = get_store().mutate_todo(item_id, completed=body.is_completed)
-        return {"plan": plan, "is_completed": body.is_completed}
+        plan = get_store().mutate_todo(
+            item_id,
+            changes=changes,
+        )
+
+        return {
+            "plan": plan,
+            "updated": True,
+        }
+
     except KeyError as exc:
-        raise HTTPException(404, "할 일을 찾을 수 없습니다.") from exc
+        raise HTTPException(
+            404,
+            "할 일을 찾을 수 없습니다."
+        ) from exc
+
+    except ValueError as exc:
+        raise HTTPException(
+            422,
+            str(exc),
+        ) from exc
 
 
 @router.delete("/todos/{item_id}")

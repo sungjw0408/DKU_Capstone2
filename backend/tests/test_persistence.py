@@ -177,3 +177,64 @@ def test_invalid_schedule_does_not_save_partial_changes(saved_document, change):
     steps[0].update(change)
     assert put(client, doc_id, steps).status_code == 422
     assert client.get(f"/api/documents/{doc_id}").json()["plan"] is None
+
+
+
+def test_management_edit_updates_plan_and_todo(
+    saved_document,
+):
+    client, _, doc_id, steps = saved_document
+
+    put(
+        client,
+        doc_id,
+        steps,
+        register=True,
+    )
+
+    todos = client.get(
+        "/api/todos",
+        params={"document_id": doc_id},
+    ).json()
+
+    target = todos[0]
+
+    response = client.patch(
+        f'/api/todos/{target["id"]}',
+        json={
+            "title": "수정된 할 일",
+            "date": "2070-09-21",
+            "time": "13:30",
+        },
+    )
+
+    assert response.status_code == 200
+
+    refreshed = client.get(
+        "/api/todos",
+        params={"document_id": doc_id},
+    ).json()
+
+    updated = next(
+        todo
+        for todo in refreshed
+        if todo["id"] == target["id"]
+    )
+
+    assert updated["title"] == "수정된 할 일"
+    assert updated["date"] == "2070-09-21"
+    assert updated["time"] == "13:30"
+
+    plan = client.get(
+        f"/api/documents/{doc_id}"
+    ).json()["plan"]
+
+    step = next(
+        step
+        for step in plan["steps"]
+        if step["id"] == target["step_id"]
+    )
+
+    assert step["label"] == "수정된 할 일"
+    assert step["date"] == "2070-09-21"
+    assert step["time"] == "13:30"

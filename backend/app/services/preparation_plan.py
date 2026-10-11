@@ -51,7 +51,36 @@ class PlanSave(BaseModel):
 
 
 class TodoPatch(BaseModel):
-    is_completed: bool
+    is_completed: bool | None = None
+    title: str | None = Field(default=None, max_length=500)
+    date: str | None = None
+    time: str | None = None
+
+    @model_validator(mode="after")
+    def validate_patch(self):
+        if self.title is not None:
+            self.title = self.title.strip()
+
+            if not self.title:
+                raise ValueError("할 일 이름을 입력해 주세요.")
+
+        if self.date:
+            if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", self.date):
+                raise ValueError("올바른 날짜를 입력해 주세요.")
+
+            try:
+                date.fromisoformat(self.date)
+            except ValueError as exc:
+                raise ValueError("올바른 날짜를 입력해 주세요.") from exc
+
+        if self.time:
+            if not re.fullmatch(
+                r"(?:[01]\d|2[0-3]):[0-5]\d",
+                self.time,
+            ):
+                raise ValueError("올바른 시간을 입력해 주세요.")
+
+        return self
 
 
 class RevisionConflict(Exception):
