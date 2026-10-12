@@ -72,6 +72,17 @@ export const listTodos = (documentId) => request(`/api/todos${documentId ? `?doc
 export const updateTodo = (id, completed) => request(`/api/todos/${encodeURIComponent(id)}`, {
   method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ is_completed: completed }),
 });
+export const editTodo = (id, patch) =>
+  request(
+    `/api/todos/${encodeURIComponent(id)}`,
+    {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(patch),
+    }
+  );
 export const deleteTodo = (id) => request(`/api/todos/${encodeURIComponent(id)}`, { method: "DELETE" });
 
 // 원문 근거 화면: 백엔드가 렌더링한 원본 PDF 페이지 이미지 주소 (page 는 1부터)

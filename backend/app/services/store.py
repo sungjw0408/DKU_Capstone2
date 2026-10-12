@@ -66,6 +66,23 @@ def _changed_analysis_plan(record, analysis):
     return plan
 
 
+def _apply_todo_changes(step, changes):
+    if "is_completed" in changes:
+        step["done"] = changes["is_completed"]
+
+    if "title" in changes:
+        step["label"] = changes["title"]
+
+    if "date" in changes:
+        step["date"] = changes["date"]
+
+    if "time" in changes:
+        step["time"] = changes["time"]
+
+    if "notes" in changes:
+        step["notes"] = changes["notes"]
+
+
 class MemoryStore:
     def __init__(self):
         self._data = {}
@@ -144,18 +161,39 @@ class MemoryStore:
             return sorted([copy.deepcopy(item) for item in self._todos.values()
                            if not doc_id or item.get("document_id") == doc_id], key=lambda item: (item.get("doc_title", ""), item.get("order", 0)))
 
-    def mutate_todo(self, item_id, completed=None, delete=False):
+    def mutate_todo(self, item_id, changes=None, delete=False):
+        changes = changes or {}
+
         with self._lock:
             item = self._todos.get(item_id)
+
             if not item:
                 raise KeyError(item_id)
+
             record = self._data[item["document_id"]]
             plan = copy.deepcopy(record["plan"])
-            plan["steps"] = [step for step in plan["steps"] if not (delete and step["id"] == item["step_id"])]
-            for step in plan["steps"]:
-                if step["id"] == item["step_id"] and not step.get("isDeadline"):
-                    step["done"] = completed
-            return self.save_plan(item["document_id"], PlanSave(steps=plan["steps"], revision=plan["revision"]))
+
+            if delete:
+                plan["steps"] = [
+                    step
+                    for step in plan["steps"]
+                    if step["id"] != item["step_id"]
+                ]
+            else:
+                for step in plan["steps"]:
+                    if (
+                        step["id"] == item["step_id"]
+                        and not step.get("isDeadline")
+                    ):
+                        _apply_todo_changes(step, changes)
+
+            return self.save_plan(
+                item["document_id"],
+                PlanSave(
+                    steps=plan["steps"],
+                    revision=plan["revision"],
+                ),
+            )
 
 
 class FirestoreStore:
@@ -284,33 +322,89 @@ class FirestoreStore:
         return sorted([{"id": snap.id, **snap.to_dict()} for snap in query.stream()],
                       key=lambda item: (item.get("doc_title", ""), item.get("order", 0)))
 
-    def mutate_todo(self, item_id, completed=None, delete=False):
+    def mutate_todo(self, item_id, changes=None, delete=False):
         from firebase_admin import firestore
+
+        changes = changes or {}
+
         @firestore.transactional
         def mutate(transaction):
             todo_ref = self.todos.document(item_id)
             snap = todo_ref.get(transaction=transaction)
+
             if not snap.exists:
                 raise KeyError(item_id)
+
             item = snap.to_dict()
             doc_id = item.get("document_id")
-            document = self.col.document(doc_id).get(transaction=transaction) if doc_id else None
-            if document and document.exists and document.to_dict().get("plan") and item.get("step_id"):
+
+            document = (
+                self.col.document(doc_id).get(
+                    transaction=transaction
+                )
+                if doc_id
+                else None
+            )
+
+            if (
+                document
+                and document.exists
+                and document.to_dict().get("plan")
+                and item.get("step_id")
+            ):
                 record = document.to_dict()
                 body = copy.deepcopy(record["plan"])
-                body["steps"] = [step for step in body["steps"] if not (delete and step["id"] == item["step_id"])]
-                for step in body["steps"]:
-                    if step["id"] == item["step_id"] and not step.get("isDeadline"):
-                        step["done"] = completed
-                plan = _new_plan(record, PlanSave(steps=body["steps"], revision=body["revision"]))
-                self._write_plan(transaction, doc_id, record, plan)
+
+                if delete:
+                    body["steps"] = [
+                        step
+                        for step in body["steps"]
+                        if step["id"] != item["step_id"]
+                    ]
+                else:
+                    for step in body["steps"]:
+                        if (
+                            step["id"] == item["step_id"]
+                            and not step.get("isDeadline")
+                        ):
+                            _apply_todo_changes(
+                                step,
+                                changes,
+                            )
+
+                plan = _new_plan(
+                    record,
+                    PlanSave(
+                        steps=body["steps"],
+                        revision=body["revision"],
+                    ),
+                )
+
+                self._write_plan(
+                    transaction,
+                    doc_id,
+                    record,
+                    plan,
+                )
+
                 return plan
-            # 기존 팀원이 등록한 legacy todos도 관리 기능을 유지한다.
+
+            # 예전 형식의 Todo 대응
             if delete:
                 transaction.delete(todo_ref)
             else:
-                transaction.update(todo_ref, {"is_completed": completed, "updated_at": _now()})
+                updated = {
+                    **changes,
+                    "updated_at": _now(),
+                }
+
+                transaction.update(
+                    todo_ref,
+                    updated,
+                )
+
             return None
+
         return mutate(self.db.transaction())
 
 
