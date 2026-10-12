@@ -79,6 +79,9 @@ def _apply_todo_changes(step, changes):
     if "time" in changes:
         step["time"] = changes["time"]
 
+    if "notes" in changes:
+        step["notes"] = changes["notes"]
+
 
 class MemoryStore:
     def __init__(self):

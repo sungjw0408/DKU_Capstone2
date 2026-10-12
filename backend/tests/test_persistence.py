@@ -180,9 +180,7 @@ def test_invalid_schedule_does_not_save_partial_changes(saved_document, change):
 
 
 
-def test_management_edit_updates_plan_and_todo(
-    saved_document,
-):
+def test_management_edit_updates_plan_and_todo(saved_document,):
     client, _, doc_id, steps = saved_document
 
     put(
@@ -205,6 +203,7 @@ def test_management_edit_updates_plan_and_todo(
             "title": "수정된 할 일",
             "date": "2070-09-21",
             "time": "13:30",
+            "notes": "수정된 메모",
         },
     )
 
@@ -224,6 +223,7 @@ def test_management_edit_updates_plan_and_todo(
     assert updated["title"] == "수정된 할 일"
     assert updated["date"] == "2070-09-21"
     assert updated["time"] == "13:30"
+    assert updated["notes"] == "수정된 메모"
 
     plan = client.get(
         f"/api/documents/{doc_id}"
@@ -238,3 +238,4 @@ def test_management_edit_updates_plan_and_todo(
     assert step["label"] == "수정된 할 일"
     assert step["date"] == "2070-09-21"
     assert step["time"] == "13:30"
+    assert step["notes"] == "수정된 메모"

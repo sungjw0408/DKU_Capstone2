@@ -55,6 +55,7 @@ class TodoPatch(BaseModel):
     title: str | None = Field(default=None, max_length=500)
     date: str | None = None
     time: str | None = None
+    notes: str | None = Field(default=None, max_length=4000)
 
     @model_validator(mode="after")
     def validate_patch(self):
@@ -63,6 +64,9 @@ class TodoPatch(BaseModel):
 
             if not self.title:
                 raise ValueError("할 일 이름을 입력해 주세요.")
+
+        if self.notes is not None:
+            self.notes = self.notes.strip()
 
         if self.date:
             if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", self.date):
