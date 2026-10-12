@@ -1,14 +1,15 @@
 import React, { useCallback, useState } from "react";
 import { useFocusEffect } from "@react-navigation/native";
-import { View, Text, ScrollView, Pressable, StyleSheet } from "react-native";
+import { View, Text, ScrollView, Pressable, StyleSheet, Modal, Alert, Platform } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import Card from "../components/Card";
 import Badge from "../components/Badge";
 import ProgressBar from "../components/ProgressBar";
 import PrimaryButton from "../components/PrimaryButton";
+import DocumentEditModal from "../components/DocumentEditModal";
 import { colors, spacing, type, radius } from "../theme/theme";
-import { listDocuments, getDocument, listTodos, updateTodo } from "../services/api";
+import { listDocuments, getDocument, listTodos, updateTodo, updateDocument, deleteDocument, } from "../services/api";
 import { localPlanDate } from "../utils/preparationPlan";
 import { upcomingDocuments, ddayLabel, planProgress } from "../utils/homeData";
 import { ddayTone } from "../utils/dday";
@@ -29,6 +30,9 @@ export default function HomeScreen({ navigation }) {
   const [busyTaskId, setBusyTaskId] = useState(null);
   const [openingId, setOpeningId] = useState(null);
   const [reload, setReload] = useState(0);
+  const [selectedDocument, setSelectedDocument] = useState(null);
+  const [editingDocument, setEditingDocument] = useState(null);
+  const [deletingId, setDeletingId] = useState(null);
 
   useFocusEffect(useCallback(() => {
     let active = true;
@@ -78,24 +82,165 @@ export default function HomeScreen({ navigation }) {
     finally { setOpeningId(null); }
   };
 
+  const saveDocumentEdit = async (patch) => {
+    const target = editingDocument;
+
+    if (!target) return;
+
+    const result = await updateDocument(
+      target.id,
+      patch
+    );
+
+    setDocuments((prev) =>
+      prev.map((document) =>
+        document.id === target.id
+          ? {
+              ...document,
+              ...result.document,
+            }
+          : document
+      )
+    );
+
+    if (patch.title) {
+      setTasks((prev) =>
+        prev.map((task) =>
+          task.document_id === target.id
+            ? {
+                ...task,
+                doc_title: patch.title,
+              }
+            : task
+        )
+      );
+    }
+
+    setEditingDocument(null);
+  };
+
+
+  const performDeleteDocument = async (document) => {
+    setDeletingId(document.id);
+    setError("");
+
+    try {
+      await deleteDocument(document.id);
+
+      setDocuments((prev) =>
+        prev.filter((item) => item.id !== document.id)
+      );
+
+      setTasks((prev) =>
+        prev.filter(
+          (item) => item.document_id !== document.id
+        )
+      );
+    } catch (e) {
+      setError(
+        e.message ?? "프로젝트 삭제에 실패했습니다."
+      );
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+
+  const confirmDeleteDocument = (document) => {
+    const message =
+      `"${document.title}" 프로젝트를 삭제할까요?\n등록된 할 일도 함께 삭제됩니다.`;
+
+    if (Platform.OS === "web") {
+      const confirmed = window.confirm(message);
+
+      if (confirmed) {
+        performDeleteDocument(document);
+      }
+
+      return;
+    }
+
+    Alert.alert(
+      "프로젝트 삭제",
+      message,
+      [
+        {
+          text: "취소",
+          style: "cancel",
+        },
+        {
+          text: "삭제",
+          style: "destructive",
+          onPress: () => {
+            performDeleteDocument(document);
+          },
+        },
+      ]
+    );
+  };
+
   const sortedUpcoming = upcomingDocuments(documents, sortBy);
   const previewUpcoming = upcomingDocuments(documents).slice(0, 3);
   const emptyLabel = loading ? "불러오는 중…" : error ? "문서를 불러오지 못했어요." : "다가오는 마감이 없습니다.";
   const renderUpcomingCard = (list) => (
     <Card>
-      {list.length === 0 && <Text style={type.small}>{emptyLabel}</Text>}
+      {list.length === 0 && (
+        <Text style={type.small}>{emptyLabel}</Text>
+      )}
+
       {list.map((item, idx) => (
-        <Pressable key={item.id} accessibilityRole="button" accessibilityLabel={`${item.title} 문서 열기`}
-          disabled={!!openingId} onPress={() => openDocument(item)}
-          style={[styles.upcomingItem, idx > 0 && styles.upcomingDivider]}>
-          <View style={styles.upcomingRow}>
-            <Text style={[type.bodyStrong, { flex: 1, marginRight: spacing.sm }]}>{item.title}</Text>
-            <Badge label={ddayLabel(item.dday)} tone={ddayTone(-item.dday)} />
-          </View>
-          <View style={{ marginTop: spacing.sm }}>
-            <ProgressBar progress={item.progress || 0} color={colors.green} />
-          </View>
-        </Pressable>
+        <View
+          key={item.id}
+          style={[
+            styles.upcomingItem,
+            idx > 0 && styles.upcomingDivider,
+          ]}
+        >
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`${item.title} 문서 열기`}
+            disabled={!!openingId}
+            onPress={() => openDocument(item)}
+            style={styles.upcomingMain}
+          >
+            <View style={styles.upcomingRow}>
+              <Text
+                style={[
+                  type.bodyStrong,
+                  { flex: 1, marginRight: spacing.sm },
+                ]}
+              >
+                {item.title}
+              </Text>
+
+              <Badge
+                label={ddayLabel(item.dday)}
+                tone={ddayTone(-item.dday)}
+              />
+            </View>
+
+            <View style={{ marginTop: spacing.sm }}>
+              <ProgressBar
+                progress={item.progress || 0}
+                color={colors.green}
+              />
+            </View>
+          </Pressable>
+
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`${item.title} 프로젝트 메뉴`}
+            hitSlop={8}
+            style={styles.moreButton}
+            onPress={() => setSelectedDocument(item)}
+          >
+            <Ionicons
+              name="ellipsis-vertical"
+              size={20}
+              color={colors.muted}
+            />
+          </Pressable>
+        </View>
       ))}
     </Card>
   );
@@ -207,6 +352,82 @@ export default function HomeScreen({ navigation }) {
         )}
 
       </ScrollView>
+
+      <Modal
+        visible={!!selectedDocument}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setSelectedDocument(null)}
+      >
+        <Pressable
+          style={styles.menuBackdrop}
+          onPress={() => setSelectedDocument(null)}
+        >
+          <Pressable
+            style={styles.documentMenu}
+            onPress={(event) => event.stopPropagation()}
+          >
+            <Text
+              style={styles.menuTitle}
+              numberOfLines={1}
+            >
+              {selectedDocument?.title}
+            </Text>
+
+            <Pressable
+              style={styles.menuAction}
+              onPress={() => {
+                const document = selectedDocument;
+                setSelectedDocument(null);
+                setEditingDocument(document);
+              }}
+            >
+              <Ionicons
+                name="create-outline"
+                size={20}
+                color={colors.ink}
+              />
+              <Text style={styles.menuActionText}>
+                프로젝트 수정
+              </Text>
+            </Pressable>
+
+            <Pressable
+              style={styles.menuAction}
+              onPress={() => {
+                const document = selectedDocument;
+                setSelectedDocument(null);
+
+                if (document) {
+                  confirmDeleteDocument(document);
+                }
+              }}
+            >
+              <Ionicons
+                name="trash-outline"
+                size={20}
+                color={colors.alert}
+              />
+              <Text
+                style={[
+                  styles.menuActionText,
+                  { color: colors.alert },
+                ]}
+              >
+                프로젝트 삭제
+              </Text>
+            </Pressable>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      {editingDocument && (
+        <DocumentEditModal
+          document={editingDocument}
+          onSave={saveDocumentEdit}
+          onClose={() => setEditingDocument(null)}
+        />
+      )}
 
       <View style={styles.bottomBar}>
         <PrimaryButton
@@ -322,9 +543,53 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
   },
-  upcomingItem: { paddingVertical: spacing.md },
+  upcomingItem: {
+    position: "relative",
+    paddingVertical: spacing.md,
+  },
+  upcomingMain: {
+    paddingRight: 32,
+  },
+  moreButton: {
+    position: "absolute",
+    right: 0,
+    top: spacing.md,
+    width: 28,
+    height: 28,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   upcomingDivider: { borderTopWidth: 1, borderTopColor: colors.line },
 
+  menuBackdrop: {
+    flex: 1,
+    justifyContent: "flex-end",
+    backgroundColor: "rgba(0, 0, 0, 0.25)",
+    padding: spacing.lg,
+  },
+  documentMenu: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: radius.lg,
+    padding: spacing.md,
+  },
+  menuTitle: {
+    ...type.bodyStrong,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.line,
+  },
+  menuAction: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.md,
+  },
+  menuActionText: {
+    ...type.bodyStrong,
+  },
+  
   bottomBar: {
     position: "absolute",
     left: 0,

@@ -60,6 +60,25 @@ export async function analyzeFile(asset) {
 
 export const listDocuments = () => request("/api/documents");
 export const getDocument = (id) => request(`/api/documents/${id}`);
+export const updateDocument = (id, patch) =>
+  request(
+    `/api/documents/${encodeURIComponent(id)}`,
+    {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(patch),
+    }
+  );
+
+export const deleteDocument = (id) =>
+  request(
+    `/api/documents/${encodeURIComponent(id)}`,
+    {
+      method: "DELETE",
+    }
+  );
 export const getSource = (id) => request(`/api/documents/${id}/source`);
 export const retryDocument = (id) => request(`/api/documents/${encodeURIComponent(id)}/retry`, { method: "POST" });
 export const savePlan = (id, steps, revision) => request(`/api/documents/${encodeURIComponent(id)}/plan`, {
