@@ -69,16 +69,12 @@ def _changed_analysis_plan(record, analysis):
 def _apply_todo_changes(step, changes):
     if "is_completed" in changes:
         step["done"] = changes["is_completed"]
-
     if "title" in changes:
         step["label"] = changes["title"]
-
     if "date" in changes:
         step["date"] = changes["date"]
-
     if "time" in changes:
         step["time"] = changes["time"]
-
     if "notes" in changes:
         step["notes"] = changes["notes"]
 
@@ -117,7 +113,8 @@ class MemoryStore:
                           key=lambda pair: pair[1]["created_at"], reverse=True)
 
     def list(self):
-        return [AnalysisResult.model_validate(record["analysis"]) for _, record in self.list_records() if record.get("analysis")]
+        return [AnalysisResult.model_validate(record["analysis"])
+                for _, record in self.list_records() if record.get("analysis")]
 
     def save(self, analysis, source):
         with self._lock:
@@ -130,7 +127,8 @@ class MemoryStore:
             self._data[doc_id].update(status="analysis_failed", error=message, updated_at=_now())
 
     def _sync_todos(self, doc_id, record):
-        for key in [key for key, item in self._todos.items() if item.get("document_id") == doc_id]:
+        for key in [key for key, item in self._todos.items()
+                    if item.get("document_id") == doc_id]:
             del self._todos[key]
         plan = record.get("plan")
         if plan and plan["registered"]:
@@ -159,14 +157,16 @@ class MemoryStore:
     def list_todos(self, doc_id=None):
         with self._lock:
             return sorted([copy.deepcopy(item) for item in self._todos.values()
-                           if not doc_id or item.get("document_id") == doc_id], key=lambda item: (item.get("doc_title", ""), item.get("order", 0)))
+                           if not doc_id or item.get("document_id") == doc_id],
+                          key=lambda item: (item.get("doc_title", ""), item.get("order", 0)))
 
-    def mutate_todo(self, item_id, changes=None, delete=False):
-        changes = changes or {}
+    def mutate_todo(self, item_id, completed=None, delete=False, changes=None):
+        changes = dict(changes or {})
+        if completed is not None:
+            changes["is_completed"] = completed
 
         with self._lock:
             item = self._todos.get(item_id)
-
             if not item:
                 raise KeyError(item_id)
 
@@ -174,75 +174,152 @@ class MemoryStore:
             plan = copy.deepcopy(record["plan"])
 
             if delete:
-                plan["steps"] = [
-                    step
-                    for step in plan["steps"]
-                    if step["id"] != item["step_id"]
-                ]
+                plan["steps"] = [step for step in plan["steps"]
+                                 if step["id"] != item["step_id"]]
             else:
                 for step in plan["steps"]:
-                    if (
-                        step["id"] == item["step_id"]
-                        and not step.get("isDeadline")
-                    ):
+                    if step["id"] == item["step_id"] and not step.get("isDeadline"):
                         _apply_todo_changes(step, changes)
 
             return self.save_plan(
                 item["document_id"],
-                PlanSave(
-                    steps=plan["steps"],
-                    revision=plan["revision"],
-                ),
+                PlanSave(steps=plan["steps"], revision=plan["revision"]),
             )
+
+    def mutate_document(self, doc_id, changes):
+        with self._lock:
+            record = self._data.get(doc_id)
+            if not record:
+                raise KeyError(doc_id)
+
+            updated = copy.deepcopy(record)
+
+            if "title" in changes:
+                updated["title"] = changes["title"]
+                if updated.get("analysis"):
+                    updated["analysis"]["title"] = changes["title"]
+
+            if "deadline_date" in changes or "deadline_time" in changes:
+                plan = updated.get("plan")
+                if not plan:
+                    raise ValueError("수정할 준비 계획이 없습니다.")
+
+                deadline = next((step for step in plan["steps"]
+                                 if step.get("isDeadline")), None)
+                if not deadline:
+                    raise ValueError("최종 마감 일정을 찾을 수 없습니다.")
+
+                if "deadline_date" in changes:
+                    deadline["date"] = changes["deadline_date"]
+                if "deadline_time" in changes:
+                    deadline["time"] = changes["deadline_time"]
+
+                updated["plan"] = _new_plan(
+                    updated,
+                    PlanSave(steps=plan["steps"], revision=plan["revision"]),
+                    registered=plan.get("registered", False),
+                )
+
+            updated["updated_at"] = _now()
+            _check_size(updated)
+            self._data[doc_id] = updated
+            self._sync_todos(doc_id, updated)
+
+            return copy.deepcopy(updated)
+
+    def delete_document(self, doc_id):
+        with self._lock:
+            if doc_id not in self._data:
+                raise KeyError(doc_id)
+
+            del self._data[doc_id]
+            self._sources.pop(doc_id, None)
+
+            todo_ids = [key for key, item in self._todos.items()
+                        if item.get("document_id") == doc_id]
+            for key in todo_ids:
+                del self._todos[key]
+
+            return {"deleted": True, "deleted_todos": len(todo_ids)}
 
 
 class FirestoreStore:
     def __init__(self):
         import firebase_admin
         from firebase_admin import credentials, firestore
+
         settings = get_settings()
+
         # 홈에서 문서와 할 일을 동시에 요청해도 Firebase 앱은 한 번만 초기화한다.
         with _firebase_init_lock:
             try:
                 firebase_admin.get_app()
             except ValueError:
-                cred = credentials.Certificate(settings.google_application_credentials) if settings.google_application_credentials else None
-                firebase_admin.initialize_app(cred, {"projectId": settings.gcp_project} if settings.gcp_project else None)
+                cred = credentials.Certificate(
+                    settings.google_application_credentials
+                ) if settings.google_application_credentials else None
+                firebase_admin.initialize_app(
+                    cred,
+                    {"projectId": settings.gcp_project} if settings.gcp_project else None,
+                )
+
         self.db = firestore.client()
         self.col = self.db.collection("documents")
         self.todos = self.db.collection("todos")
 
     def save_source(self, doc_id, source, title="문서"):
         ref = self.col.document(doc_id)
+
         # 긴 페이지도 UTF-8 기준 약 500KB 조각으로 나누어 Firestore 문서 크기를 제한한다.
         chunks = []
         for page_index, page in enumerate(source.pages):
             for offset in range(0, max(1, len(page)), 100_000):
                 chunks.append({"page": page_index, "text": page[offset:offset + 100_000]})
-        if len(chunks) > 400 or sum(len(chunk["text"].encode("utf-8")) for chunk in chunks) > 8_000_000:
+
+        if len(chunks) > 400 or sum(
+            len(chunk["text"].encode("utf-8")) for chunk in chunks
+        ) > 8_000_000:
             raise ValueError("추출된 원문이 너무 큽니다. 문서를 나눠 올려 주세요.")
+
         batch = self.db.batch()
-        batch.set(ref, {"title": title, "created_at": _now(), "status": "analyzing", "source_kind": source.source_kind})
+        batch.set(ref, {"title": title, "created_at": _now(), "status": "analyzing",
+                        "source_kind": source.source_kind})
         batch.set(ref.collection("source").document("raw"), {
-            "source_kind": source.source_kind, "masked_count": source.masked_count,
-            "page_count": len(source.pages), "chunk_count": len(chunks)})
+            "source_kind": source.source_kind,
+            "masked_count": source.masked_count,
+            "page_count": len(source.pages),
+            "chunk_count": len(chunks),
+        })
+
         for index, chunk in enumerate(chunks):
             batch.set(ref.collection("sourceChunks").document(f"{index:06d}"), chunk)
+
         batch.commit()
 
     def get_source(self, doc_id):
         ref = self.col.document(doc_id)
         snap = ref.collection("source").document("raw").get()
+
         if not snap.exists:
             return None
+
         data = snap.to_dict()
-        if "pages" in data:  # 이전 FirestoreStore가 저장한 원문도 읽는다.
+
+        # 이전 FirestoreStore가 저장한 원문도 읽는다.
+        if "pages" in data:
             return SourceDocument.model_validate(data)
+
         pages = [""] * data["page_count"]
+
         for chunk in ref.collection("sourceChunks").order_by("__name__").stream():
             part = chunk.to_dict()
             pages[part["page"]] += part["text"]
-        return SourceDocument(source_kind=data["source_kind"], pages=pages, masked_count=data.get("masked_count", 0))
+
+        return SourceDocument(
+            source_kind=data["source_kind"],
+            pages=pages,
+            masked_count=data.get("masked_count", 0),
+        )
 
     def get_record(self, doc_id):
         snap = self.col.document(doc_id).get()
@@ -252,80 +329,262 @@ class FirestoreStore:
         record = self.get_record(doc_id)
         if not record or not record.get("analysis"):
             return None
+
         return AnalysisResult.model_validate(record["analysis"]), self.get_source(doc_id)
 
     def list_records(self):
         # order_by는 created_at이 없는 기존 문서를 제외하므로 전체를 읽어 정렬한다.
         records = [(snap.id, snap.to_dict()) for snap in self.col.stream()]
-        return sorted(records, key=lambda pair: str(pair[1].get("created_at") or ""), reverse=True)
+        return sorted(records,
+                      key=lambda pair: str(pair[1].get("created_at") or ""),
+                      reverse=True)
 
     def list(self):
-        return [AnalysisResult.model_validate(record["analysis"]) for _, record in self.list_records() if record.get("analysis")]
+        return [AnalysisResult.model_validate(record["analysis"])
+                for _, record in self.list_records() if record.get("analysis")]
 
     def save(self, analysis, source):
         ref = self.col.document(analysis.document_id)
+
         if not ref.get().exists:
             self.save_source(analysis.document_id, source, analysis.title)
+
         summary = _summary(analysis)
         _check_size({**(self.get_record(analysis.document_id) or {}), **summary})
         ref.update(summary)
 
     def mark_failed(self, doc_id, message):
-        self.col.document(doc_id).update({"status": "analysis_failed", "error": message, "updated_at": _now()})
+        self.col.document(doc_id).update({
+            "status": "analysis_failed",
+            "error": message,
+            "updated_at": _now(),
+        })
 
     def _write_plan(self, transaction, doc_id, record, plan):
         from google.cloud.firestore_v1.base_query import FieldFilter
+
         ref = self.col.document(doc_id)
         items = plan_todos(doc_id, record["title"], plan) if plan["registered"] else []
         item_ids = {item["id"] for item in items}
+
         # 기존 형식으로 등록된 같은 문서의 할 일도 현재 계획으로 교체하여 중복을 방지한다.
-        old_ids = {snap.id for snap in self.todos.where(filter=FieldFilter("document_id", "==", doc_id)).get(transaction=transaction)} if plan["registered"] else set()
+        old_ids = {
+            snap.id
+            for snap in self.todos.where(
+                filter=FieldFilter("document_id", "==", doc_id)
+            ).get(transaction=transaction)
+        } if plan["registered"] else set()
+
         transaction.update(ref, {"plan": plan, "updated_at": plan["updated_at"]})
+
         for item_id in old_ids - item_ids:
             transaction.delete(self.todos.document(item_id))
+
         for item in items:
-            transaction.set(self.todos.document(item["id"]), {key: value for key, value in item.items() if key != "id"})
+            transaction.set(
+                self.todos.document(item["id"]),
+                {key: value for key, value in item.items() if key != "id"},
+            )
 
     def save_plan(self, doc_id, body: PlanSave, registered=False):
         from firebase_admin import firestore
+
         @firestore.transactional
         def save(transaction):
             snap = self.col.document(doc_id).get(transaction=transaction)
+
             if not snap.exists or not snap.to_dict().get("analysis"):
                 raise KeyError(doc_id)
+
             record = snap.to_dict()
             plan = _new_plan(record, body, registered)
+
             self._write_plan(transaction, doc_id, record, plan)
             return plan
+
         return save(self.db.transaction())
 
     def update_analysis(self, analysis):
         from firebase_admin import firestore
+
         @firestore.transactional
         def update(transaction):
             ref = self.col.document(analysis.document_id)
             snap = ref.get(transaction=transaction)
+
             if not snap.exists:
                 raise KeyError(analysis.document_id)
+
             record = snap.to_dict()
             plan = _changed_analysis_plan(record, analysis)
             updated = {**record, **_summary(analysis), **({"plan": plan} if plan else {})}
+
             _check_size(updated)
+
             if plan:
                 self._write_plan(transaction, analysis.document_id, record, plan)
+
             transaction.update(ref, _summary(analysis))
+
         update(self.db.transaction())
 
     def list_todos(self, doc_id=None):
         from google.cloud.firestore_v1.base_query import FieldFilter
-        query = self.todos.where(filter=FieldFilter("document_id", "==", doc_id)) if doc_id else self.todos
-        return sorted([{"id": snap.id, **snap.to_dict()} for snap in query.stream()],
-                      key=lambda item: (item.get("doc_title", ""), item.get("order", 0)))
 
-    def mutate_todo(self, item_id, changes=None, delete=False):
+        query = self.todos.where(
+            filter=FieldFilter("document_id", "==", doc_id)
+        ) if doc_id else self.todos
+
+        return sorted(
+            [{"id": snap.id, **snap.to_dict()} for snap in query.stream()],
+            key=lambda item: (item.get("doc_title", ""), item.get("order", 0)),
+        )
+
+    def mutate_document(self, doc_id, changes):
+        from firebase_admin import firestore
+        from google.cloud.firestore_v1.base_query import FieldFilter
+
+        @firestore.transactional
+        def mutate(transaction):
+            ref = self.col.document(doc_id)
+            snap = ref.get(transaction=transaction)
+
+            if not snap.exists:
+                raise KeyError(doc_id)
+
+            record = snap.to_dict()
+            updated = copy.deepcopy(record)
+
+            if "title" in changes:
+                updated["title"] = changes["title"]
+
+                if updated.get("analysis"):
+                    updated["analysis"]["title"] = changes["title"]
+
+            deadline_changed = (
+                "deadline_date" in changes
+                or "deadline_time" in changes
+            )
+
+            new_plan = None
+
+            if deadline_changed:
+                plan = updated.get("plan")
+
+                if not plan:
+                    raise ValueError("수정할 준비 계획이 없습니다.")
+
+                deadline = next(
+                    (step for step in plan["steps"] if step.get("isDeadline")),
+                    None,
+                )
+
+                if not deadline:
+                    raise ValueError("최종 마감 일정을 찾을 수 없습니다.")
+
+                if "deadline_date" in changes:
+                    deadline["date"] = changes["deadline_date"]
+
+                if "deadline_time" in changes:
+                    deadline["time"] = changes["deadline_time"]
+
+                new_plan = _new_plan(
+                    updated,
+                    PlanSave(steps=plan["steps"], revision=plan["revision"]),
+                    registered=plan.get("registered", False),
+                )
+
+                updated["plan"] = new_plan
+
+            todo_snaps = []
+
+            if "title" in changes and not deadline_changed:
+                todo_snaps = list(
+                    self.todos.where(
+                        filter=FieldFilter("document_id", "==", doc_id)
+                    ).get(transaction=transaction)
+                )
+
+            updated["updated_at"] = _now()
+            _check_size(updated)
+
+            if new_plan is not None:
+                self._write_plan(transaction, doc_id, updated, new_plan)
+
+            elif "title" in changes:
+                for todo_snap in todo_snaps:
+                    transaction.update(todo_snap.reference, {
+                        "doc_title": updated["title"],
+                        "updated_at": updated["updated_at"],
+                    })
+
+            document_changes = {"updated_at": updated["updated_at"]}
+
+            if "title" in changes:
+                document_changes["title"] = updated["title"]
+
+                if updated.get("analysis"):
+                    document_changes["analysis"] = updated["analysis"]
+
+            transaction.update(ref, document_changes)
+
+            return updated
+
+        return mutate(self.db.transaction())
+
+    def delete_document(self, doc_id):
+        from google.cloud.firestore_v1.base_query import FieldFilter
+
+        ref = self.col.document(doc_id)
+
+        if not ref.get().exists:
+            raise KeyError(doc_id)
+
+        todo_snaps = list(
+            self.todos.where(
+                filter=FieldFilter("document_id", "==", doc_id)
+            ).stream()
+        )
+
+        source_snaps = list(
+            ref.collection("source").stream()
+        )
+
+        chunk_snaps = list(
+            ref.collection("sourceChunks").stream()
+        )
+
+        delete_refs = (
+            [snap.reference for snap in todo_snaps]
+            + [snap.reference for snap in source_snaps]
+            + [snap.reference for snap in chunk_snaps]
+        )
+
+        # Firestore batch 최대 개수를 넘지 않도록 나누어 삭제한다.
+        for start in range(0, len(delete_refs), 400):
+            batch = self.db.batch()
+
+            for delete_ref in delete_refs[start:start + 400]:
+                batch.delete(delete_ref)
+
+            batch.commit()
+
+        # 하위 데이터 삭제가 끝난 뒤 문서 본체를 마지막에 삭제한다.
+        ref.delete()
+
+        return {
+            "deleted": True,
+            "deleted_todos": len(todo_snaps),
+        }
+
+    def mutate_todo(self, item_id, completed=None, delete=False, changes=None):
         from firebase_admin import firestore
 
-        changes = changes or {}
+        changes = dict(changes or {})
+
+        # 기존 완료 체크 API와의 호환성 유지
+        if completed is not None:
+            changes["is_completed"] = completed
 
         @firestore.transactional
         def mutate(transaction):
@@ -339,9 +598,7 @@ class FirestoreStore:
             doc_id = item.get("document_id")
 
             document = (
-                self.col.document(doc_id).get(
-                    transaction=transaction
-                )
+                self.col.document(doc_id).get(transaction=transaction)
                 if doc_id
                 else None
             )
@@ -363,45 +620,22 @@ class FirestoreStore:
                     ]
                 else:
                     for step in body["steps"]:
-                        if (
-                            step["id"] == item["step_id"]
-                            and not step.get("isDeadline")
-                        ):
-                            _apply_todo_changes(
-                                step,
-                                changes,
-                            )
+                        if step["id"] == item["step_id"] and not step.get("isDeadline"):
+                            _apply_todo_changes(step, changes)
 
                 plan = _new_plan(
                     record,
-                    PlanSave(
-                        steps=body["steps"],
-                        revision=body["revision"],
-                    ),
+                    PlanSave(steps=body["steps"], revision=body["revision"]),
                 )
 
-                self._write_plan(
-                    transaction,
-                    doc_id,
-                    record,
-                    plan,
-                )
-
+                self._write_plan(transaction, doc_id, record, plan)
                 return plan
 
             # 예전 형식의 Todo 대응
             if delete:
                 transaction.delete(todo_ref)
             else:
-                updated = {
-                    **changes,
-                    "updated_at": _now(),
-                }
-
-                transaction.update(
-                    todo_ref,
-                    updated,
-                )
+                transaction.update(todo_ref, {**changes, "updated_at": _now()})
 
             return None
 

@@ -15,7 +15,7 @@ from app.llm import get_llm
 from app.schemas import AnalysisResult
 from app.services import originals, pipeline
 from app.services.frontend_view import to_analysis_detail
-from app.services.preparation_plan import PlanSave, RevisionConflict, TodoPatch, document_list_item
+from app.services.preparation_plan import DocumentPatch, PlanSave, RevisionConflict, TodoPatch, document_list_item
 from app.services.store import get_store
 from app.utils.text import split_sentences
 
@@ -148,6 +148,60 @@ def get_document(doc_id: str):
         raise HTTPException(409, {"message": record.get("error") or "아직 문서 분석이 완료되지 않았습니다.", "documentId": doc_id})
     return _response(AnalysisResult.model_validate(record["analysis"]), record)
 
+@router.patch("/documents/{doc_id}")
+def update_document(doc_id: str, body: DocumentPatch):
+    changes = body.model_dump(
+        exclude_unset=True
+    )
+
+    if not changes:
+        raise HTTPException(
+            422,
+            "수정할 내용이 없습니다."
+        )
+
+    try:
+        updated = get_store().mutate_document(
+            doc_id,
+            changes,
+        )
+
+        return {
+            "updated": True,
+            "document": document_list_item(
+                doc_id,
+                updated,
+                _today(),
+            ),
+            "plan": updated.get("plan"),
+        }
+
+    except KeyError as exc:
+        raise HTTPException(
+            404,
+            "문서를 찾을 수 없습니다."
+        ) from exc
+
+    except ValueError as exc:
+        raise HTTPException(
+            422,
+            str(exc),
+        ) from exc
+
+
+@router.delete("/documents/{doc_id}")
+def delete_document(doc_id: str):
+    try:
+        result = get_store().delete_document(doc_id)
+    except KeyError as exc:
+        raise HTTPException(
+            404,
+            "문서를 찾을 수 없습니다."
+        ) from exc
+
+    originals.delete_originals(doc_id)
+
+    return result
 
 @router.get("/documents/{doc_id}/source")
 def get_source(doc_id: str):
@@ -247,9 +301,7 @@ def list_todos(document_id: str | None = None):
 
 @router.patch("/todos/{item_id}")
 def update_todo(item_id: str, body: TodoPatch):
-    changes = body.model_dump(
-        exclude_unset=True
-    )
+    changes = body.model_dump(exclude_unset=True)
 
     if not changes:
         raise HTTPException(

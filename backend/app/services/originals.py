@@ -391,3 +391,25 @@ def page_image(doc_id: str, page_no: int, width: int = 1000) -> tuple[bytes, str
         return (_dir() / meta["file"]).read_bytes(), meta["mime"]
     png = render_png(doc_id, page_no, width)
     return (png, "image/png") if png else None
+
+
+def delete_originals(doc_id: str) -> int:
+    """문서와 관련된 로컬 원본 및 렌더링 캐시 파일을 삭제한다."""
+    if not _SAFE_ID.match(doc_id):
+        return 0
+
+    deleted = 0
+
+    for path in _dir().glob(f"{doc_id}.*"):
+        try:
+            path.unlink()
+            deleted += 1
+        except OSError:
+            # 로컬 원본은 보조 데이터이므로
+            # 일부 파일 삭제 실패가 전체 문서 삭제를 막지는 않는다.
+            continue
+
+    # 삭제 전 계산해 둔 PDF 페이지 정보가 남지 않도록 캐시도 비운다.
+    _pdf_layout.cache_clear()
+
+    return deleted

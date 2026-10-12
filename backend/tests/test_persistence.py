@@ -179,8 +179,48 @@ def test_invalid_schedule_does_not_save_partial_changes(saved_document, change):
     assert client.get(f"/api/documents/{doc_id}").json()["plan"] is None
 
 
+def test_document_edit_updates_title_deadline_and_todo_doc_title(saved_document):
+    client, store, doc_id, steps = saved_document
 
-def test_management_edit_updates_plan_and_todo(saved_document,):
+    put(
+        client,
+        doc_id,
+        steps,
+        register=True,
+    )
+
+    updated = store.mutate_document(
+        doc_id,
+        {
+            "title": "수정된 프로젝트 제목",
+            "deadline_date": "2070-09-26",
+            "deadline_time": "18:30",
+        },
+    )
+
+    assert updated["title"] == "수정된 프로젝트 제목"
+    assert updated["analysis"]["title"] == "수정된 프로젝트 제목"
+
+    deadline = next(
+        step
+        for step in updated["plan"]["steps"]
+        if step.get("isDeadline")
+    )
+
+    assert deadline["date"] == "2070-09-26"
+    assert deadline["time"] == "18:30"
+
+    assert updated["plan"]["revision"] == 2
+
+    todos = store.list_todos(doc_id)
+
+    assert todos
+    assert all(
+        todo["doc_title"] == "수정된 프로젝트 제목"
+        for todo in todos
+    )
+
+def test_document_patch_api_updates_project_and_todos(saved_document):
     client, _, doc_id, steps = saved_document
 
     put(
@@ -190,52 +230,90 @@ def test_management_edit_updates_plan_and_todo(saved_document,):
         register=True,
     )
 
-    todos = client.get(
-        "/api/todos",
-        params={"document_id": doc_id},
-    ).json()
-
-    target = todos[0]
-
     response = client.patch(
-        f'/api/todos/{target["id"]}',
+        f"/api/documents/{doc_id}",
         json={
-            "title": "수정된 할 일",
-            "date": "2070-09-21",
-            "time": "13:30",
-            "notes": "수정된 메모",
+            "title": "API에서 수정된 프로젝트",
+            "deadline_date": "2070-09-26",
+            "deadline_time": "18:30",
         },
     )
 
     assert response.status_code == 200
 
-    refreshed = client.get(
+    # 문서를 다시 조회해 실제 저장 결과 확인
+    document = client.get(
+        f"/api/documents/{doc_id}"
+    ).json()
+
+    assert (
+        document["analysis"]["title"]
+        == "API에서 수정된 프로젝트"
+    )
+
+    deadline = next(
+        step
+        for step in document["plan"]["steps"]
+        if step.get("isDeadline")
+    )
+
+    assert deadline["date"] == "2070-09-26"
+    assert deadline["time"] == "18:30"
+
+    # Todo의 프로젝트 제목도 같이 변경됐는지 확인
+    todos = client.get(
         "/api/todos",
         params={"document_id": doc_id},
     ).json()
 
+    assert todos
+
+    assert all(
+        todo["doc_title"]
+        == "API에서 수정된 프로젝트"
+        for todo in todos
+    )
+
+    # Home에서 사용하는 문서 목록도 새 제목/마감을 반환해야 한다.
+    documents = client.get(
+        "/api/documents"
+    ).json()
+
     updated = next(
-        todo
-        for todo in refreshed
-        if todo["id"] == target["id"]
+        item
+        for item in documents
+        if item["id"] == doc_id
     )
 
-    assert updated["title"] == "수정된 할 일"
-    assert updated["date"] == "2070-09-21"
-    assert updated["time"] == "13:30"
-    assert updated["notes"] == "수정된 메모"
+    assert updated["title"] == "API에서 수정된 프로젝트"
+    assert updated["deadline"] == "2070-09-26T18:30"
 
-    plan = client.get(
+def test_document_delete_api_removes_document_source_and_todos(saved_document):
+    client, _, doc_id, steps = saved_document
+
+    put(client, doc_id, steps, register=True)
+
+    response = client.delete(
         f"/api/documents/{doc_id}"
-    ).json()["plan"]
-
-    step = next(
-        step
-        for step in plan["steps"]
-        if step["id"] == target["step_id"]
     )
 
-    assert step["label"] == "수정된 할 일"
-    assert step["date"] == "2070-09-21"
-    assert step["time"] == "13:30"
-    assert step["notes"] == "수정된 메모"
+    assert response.status_code == 200
+    assert response.json()["deleted"] is True
+
+    assert client.get(
+        f"/api/documents/{doc_id}"
+    ).status_code == 404
+
+    assert client.get(
+        "/api/todos",
+        params={"document_id": doc_id},
+    ).json() == []
+
+    assert client.get(
+        f"/api/documents/{doc_id}/source"
+    ).status_code == 404
+
+    # 이미 삭제한 문서를 다시 삭제하면 404
+    assert client.delete(
+        f"/api/documents/{doc_id}"
+    ).status_code == 404
