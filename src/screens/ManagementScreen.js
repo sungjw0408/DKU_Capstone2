@@ -7,10 +7,11 @@ import { Ionicons } from "@expo/vector-icons";
 import Card from "../components/Card";
 import ProgressBar from "../components/ProgressBar";
 import { colors, spacing, type, radius } from "../theme/theme";
-import { listTodos, updateTodo, deleteTodo, listDocuments } from "../services/api";
+import { listTodos, updateTodo,  editTodo, deleteTodo, listDocuments } from "../services/api";
 import { formatStepDate, getDday, localPlanDate } from "../utils/preparationPlan";
 import { daysUntil, googleCalendarUrl, isOverdue, nextTodo, splitDeadline } from "../utils/todoManagement";
 import { ddayTone, DDAY_COLORS } from "../utils/dday";
+import TodoEditModal from "../components/TodoEditModal";
 
 
 // 주소 열기: 웹은 새 탭으로, 폰은 캘린더 앱(또는 브라우저)으로
@@ -38,6 +39,7 @@ export default function ManagementScreen({ navigation, route }) {
   const [error, setError] = useState("");
   const [busyId, setBusyId] = useState(null);
   const [doc, setDoc] = useState(null);
+  const [editingTodo, setEditingTodo] = useState(null);
   const goHome = useCallback(() => {
     navigation.reset({ index: 0, routes: [{ name: "Home" }] });
   }, [navigation]);
@@ -81,6 +83,31 @@ export default function ManagementScreen({ navigation, route }) {
       setTodoList((prev) => prev.map((item) => item.id === todoId ? { ...item, is_completed: currentStatus } : item));
       setError(e.message);
     } finally { setBusyId(null); }
+  };
+
+  const handleEditSave = async (patch) => {
+    if (!editingTodo || busyId) {
+      return;
+    }
+
+    const todoId = editingTodo.id;
+
+    setBusyId(todoId);
+    setError("");
+
+    try {
+      await editTodo(todoId, patch);
+
+      const items = await listTodos(documentId);
+
+      setTodoList(items);
+      setEditingTodo(null);
+    } catch (e) {
+      setError(e.message);
+      throw e;
+    } finally {
+      setBusyId(null);
+    }
   };
 
   const removeTodo = async (todoId) => {
@@ -210,6 +237,22 @@ export default function ManagementScreen({ navigation, route }) {
                   </View>
                 </Pressable>
 
+                {/* Todo 수정 버튼 */}
+                <Pressable
+                  style={styles.actionIcon}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${item.title} 수정`}
+                  disabled={!!busyId}
+                  onPress={() => setEditingTodo(item)}
+                  hitSlop={6}
+                >
+                  <Ionicons
+                    name="create-outline"
+                    size={18}
+                    color={colors.stamp}
+                  />
+                </Pressable>
+
                 {/* Google 캘린더에 추가 (날짜가 있을 때만 누를 수 있음) */}
                 <Pressable
                   style={styles.calendarIcon}
@@ -264,6 +307,14 @@ export default function ManagementScreen({ navigation, route }) {
           <Text style={styles.homeButtonText}>홈으로</Text>
         </Pressable>
       </ScrollView>
+      {editingTodo && (
+        <TodoEditModal
+          todo={editingTodo}
+          maxDate={deadline?.date}
+          onSave={handleEditSave}
+          onClose={() => setEditingTodo(null)}
+        />
+      )}      
     </SafeAreaView>
   );
 }
