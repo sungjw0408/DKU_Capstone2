@@ -177,3 +177,143 @@ def test_invalid_schedule_does_not_save_partial_changes(saved_document, change):
     steps[0].update(change)
     assert put(client, doc_id, steps).status_code == 422
     assert client.get(f"/api/documents/{doc_id}").json()["plan"] is None
+
+
+def test_document_edit_updates_title_deadline_and_todo_doc_title(saved_document):
+    client, store, doc_id, steps = saved_document
+
+    put(
+        client,
+        doc_id,
+        steps,
+        register=True,
+    )
+
+    updated = store.mutate_document(
+        doc_id,
+        {
+            "title": "수정된 프로젝트 제목",
+            "deadline_date": "2070-09-26",
+            "deadline_time": "18:30",
+        },
+    )
+
+    assert updated["title"] == "수정된 프로젝트 제목"
+    assert updated["analysis"]["title"] == "수정된 프로젝트 제목"
+
+    deadline = next(
+        step
+        for step in updated["plan"]["steps"]
+        if step.get("isDeadline")
+    )
+
+    assert deadline["date"] == "2070-09-26"
+    assert deadline["time"] == "18:30"
+
+    assert updated["plan"]["revision"] == 2
+
+    todos = store.list_todos(doc_id)
+
+    assert todos
+    assert all(
+        todo["doc_title"] == "수정된 프로젝트 제목"
+        for todo in todos
+    )
+
+def test_document_patch_api_updates_project_and_todos(saved_document):
+    client, _, doc_id, steps = saved_document
+
+    put(
+        client,
+        doc_id,
+        steps,
+        register=True,
+    )
+
+    response = client.patch(
+        f"/api/documents/{doc_id}",
+        json={
+            "title": "API에서 수정된 프로젝트",
+            "deadline_date": "2070-09-26",
+            "deadline_time": "18:30",
+        },
+    )
+
+    assert response.status_code == 200
+
+    # 문서를 다시 조회해 실제 저장 결과 확인
+    document = client.get(
+        f"/api/documents/{doc_id}"
+    ).json()
+
+    assert (
+        document["analysis"]["title"]
+        == "API에서 수정된 프로젝트"
+    )
+
+    deadline = next(
+        step
+        for step in document["plan"]["steps"]
+        if step.get("isDeadline")
+    )
+
+    assert deadline["date"] == "2070-09-26"
+    assert deadline["time"] == "18:30"
+
+    # Todo의 프로젝트 제목도 같이 변경됐는지 확인
+    todos = client.get(
+        "/api/todos",
+        params={"document_id": doc_id},
+    ).json()
+
+    assert todos
+
+    assert all(
+        todo["doc_title"]
+        == "API에서 수정된 프로젝트"
+        for todo in todos
+    )
+
+    # Home에서 사용하는 문서 목록도 새 제목/마감을 반환해야 한다.
+    documents = client.get(
+        "/api/documents"
+    ).json()
+
+    updated = next(
+        item
+        for item in documents
+        if item["id"] == doc_id
+    )
+
+    assert updated["title"] == "API에서 수정된 프로젝트"
+    assert updated["deadline"] == "2070-09-26T18:30"
+
+def test_document_delete_api_removes_document_source_and_todos(saved_document):
+    client, _, doc_id, steps = saved_document
+
+    put(client, doc_id, steps, register=True)
+
+    response = client.delete(
+        f"/api/documents/{doc_id}"
+    )
+
+    assert response.status_code == 200
+    assert response.json()["deleted"] is True
+
+    assert client.get(
+        f"/api/documents/{doc_id}"
+    ).status_code == 404
+
+    assert client.get(
+        "/api/todos",
+        params={"document_id": doc_id},
+    ).json() == []
+
+    assert client.get(
+        f"/api/documents/{doc_id}/source"
+    ).status_code == 404
+
+    # 이미 삭제한 문서를 다시 삭제하면 404
+    assert client.delete(
+        f"/api/documents/{doc_id}"
+    ).status_code == 404

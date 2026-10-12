@@ -53,6 +53,60 @@ class PlanSave(BaseModel):
 class TodoPatch(BaseModel):
     is_completed: bool
 
+class DocumentPatch(BaseModel):
+    title: str | None = Field(
+        default=None,
+        max_length=500,
+    )
+    deadline_date: str | None = None
+    deadline_time: str | None = None
+
+    @model_validator(mode="after")
+    def validate_patch(self):
+        if self.title is not None:
+            self.title = self.title.strip()
+
+            if not self.title:
+                raise ValueError(
+                    "프로젝트 제목을 입력해 주세요."
+                )
+
+        if self.deadline_date:
+            if not re.fullmatch(
+                r"\d{4}-\d{2}-\d{2}",
+                self.deadline_date,
+            ):
+                raise ValueError(
+                    "올바른 마감 날짜를 입력해 주세요."
+                )
+
+            try:
+                date.fromisoformat(
+                    self.deadline_date
+                )
+            except ValueError as exc:
+                raise ValueError(
+                    "올바른 마감 날짜를 입력해 주세요."
+                ) from exc
+
+        if self.deadline_time:
+            if not re.fullmatch(
+                r"(?:[01]\d|2[0-3]):[0-5]\d",
+                self.deadline_time,
+            ):
+                raise ValueError(
+                    "올바른 마감 시간을 입력해 주세요."
+                )
+
+        if (
+            self.deadline_date == ""
+            and self.deadline_time
+        ):
+            raise ValueError(
+                "마감 시간을 지정하려면 마감 날짜가 필요합니다."
+            )
+
+        return self
 
 class RevisionConflict(Exception):
     pass
