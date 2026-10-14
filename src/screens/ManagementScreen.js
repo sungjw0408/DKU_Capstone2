@@ -1,17 +1,18 @@
 // src/screens/ManagementScreen.js
 import React, { useCallback, useLayoutEffect, useState } from "react";
 import { useFocusEffect } from "@react-navigation/native";
-import { View, Text, ScrollView, Pressable, StyleSheet, ActivityIndicator, Alert, Platform, Linking } from "react-native";
+import { View, Text, ScrollView, Pressable, StyleSheet, ActivityIndicator, Alert, Platform, Linking, Modal } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import Card from "../components/Card";
 import ProgressBar from "../components/ProgressBar";
 import { colors, spacing, type, radius } from "../theme/theme";
-import { listTodos, updateTodo,  editTodo, deleteTodo, listDocuments } from "../services/api";
+import { listTodos, updateTodo,  editTodo, deleteTodo, listDocuments, updateDocument, deleteDocument } from "../services/api";
 import { formatStepDate, getDday, localPlanDate } from "../utils/preparationPlan";
 import { daysUntil, googleCalendarUrl, isOverdue, nextTodo, splitDeadline } from "../utils/todoManagement";
 import { ddayTone, DDAY_COLORS } from "../utils/dday";
 import TodoEditModal from "../components/TodoEditModal";
+import DocumentEditModal from "../components/DocumentEditModal";
 
 
 // 주소 열기: 웹은 새 탭으로, 폰은 캘린더 앱(또는 브라우저)으로
@@ -40,6 +41,9 @@ export default function ManagementScreen({ navigation, route }) {
   const [busyId, setBusyId] = useState(null);
   const [doc, setDoc] = useState(null);
   const [editingTodo, setEditingTodo] = useState(null);
+  const [showDocumentMenu, setShowDocumentMenu] = useState(false);
+  const [editingDocument, setEditingDocument] = useState(null);
+  
   const goHome = useCallback(() => {
     navigation.reset({ index: 0, routes: [{ name: "Home" }] });
   }, [navigation]);
@@ -132,6 +136,83 @@ export default function ManagementScreen({ navigation, route }) {
     ]);
   };
 
+  const handleDocumentEditSave = async (patch) => {
+    if (!editingDocument) return;
+
+    setError("");
+
+    try {
+      const result = await updateDocument(
+        editingDocument.id,
+        patch
+      );
+
+      setDoc((prev) => ({
+        ...prev,
+        ...result.document,
+      }));
+
+      if (patch.title) {
+        setTodoList((prev) =>
+          prev.map((item) => ({
+            ...item,
+            doc_title: patch.title,
+          }))
+        );
+      }
+
+      setEditingDocument(null);
+    } catch (e) {
+      setError(e.message);
+      throw e;
+    }
+  };
+
+  const removeDocument = async () => {
+    if (!doc) return;
+
+    setError("");
+
+    try {
+      await deleteDocument(doc.id);
+      goHome();
+    } catch (e) {
+      setError(
+        e.message ?? "프로젝트 삭제에 실패했습니다."
+      );
+    }
+  };
+
+  const confirmDeleteDocument = () => {
+    if (!doc) return;
+
+    const message =
+      `"${doc.title}" 프로젝트를 삭제할까요?\n등록된 할 일도 함께 삭제됩니다.`;
+
+    if (Platform.OS === "web") {
+      if (window.confirm(message)) {
+        removeDocument();
+      }
+      return;
+    }
+
+    Alert.alert(
+      "프로젝트 삭제",
+      message,
+      [
+        {
+          text: "취소",
+          style: "cancel",
+        },
+        {
+          text: "삭제",
+          style: "destructive",
+          onPress: removeDocument,
+        },
+      ]
+    );
+  };
+
   // 진행률 자동 계산
   const completedCount = todoList.filter((item) => item.is_completed).length;
   const progress = todoList.length > 0 ? completedCount / todoList.length : 0;
@@ -142,7 +223,7 @@ export default function ManagementScreen({ navigation, route }) {
   const allDone = todoList.length > 0 && completedCount === todoList.length;
   const next = nextTodo(todoList);
   const deadlineUrl = deadline && googleCalendarUrl({
-    title: `[마감] ${todoList[0]?.doc_title || route?.params?.documentTitle || "신청"}`,
+    title: `[마감] ${doc?.title || todoList[0]?.doc_title || route?.params?.documentTitle || "신청"}`,
     date: deadline.date,
     time: deadline.time,
     durationMinutes: 30,
@@ -168,13 +249,46 @@ export default function ManagementScreen({ navigation, route }) {
         <Card style={styles.card}>
           <View style={styles.cardHead}>
             <Text style={styles.docTitle} numberOfLines={2}>
-              {todoList[0]?.doc_title || route?.params?.documentTitle || "할 일 목록"}
+              {doc?.title ||
+                todoList[0]?.doc_title ||
+                route?.params?.documentTitle ||
+                "할 일 목록"}
             </Text>
-            {ddayLabel && (
-              <View style={[styles.ddayBadge, { backgroundColor: ddayColor.bg }]}>
-                <Text style={[styles.ddayText, { color: ddayColor.fg }]}>{ddayLabel}</Text>
-              </View>
-            )}
+
+            <View style={styles.projectActions}>
+              {ddayLabel && (
+                <View
+                  style={[
+                    styles.ddayBadge,
+                    { backgroundColor: ddayColor.bg },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.ddayText,
+                      { color: ddayColor.fg },
+                    ]}
+                  >
+                    {ddayLabel}
+                  </Text>
+                </View>
+              )}
+
+              <Pressable
+                style={styles.projectMenuButton}
+                disabled={!doc}
+                accessibilityRole="button"
+                accessibilityLabel="프로젝트 메뉴"
+                onPress={() => setShowDocumentMenu(true)}
+                hitSlop={8}
+              >
+                <Ionicons
+                  name="ellipsis-vertical"
+                  size={20}
+                  color={colors.muted}
+                />
+              </Pressable>
+            </View>
           </View>
           {deadline && (
             <Text style={styles.deadlineText}>
@@ -307,6 +421,88 @@ export default function ManagementScreen({ navigation, route }) {
           <Text style={styles.homeButtonText}>홈으로</Text>
         </Pressable>
       </ScrollView>
+
+      <Modal
+        visible={showDocumentMenu}
+        transparent
+        animationType="fade"
+        onRequestClose={() =>
+          setShowDocumentMenu(false)
+        }
+      >
+        <Pressable
+          style={styles.menuBackdrop}
+          onPress={() =>
+            setShowDocumentMenu(false)
+          }
+        >
+          <Pressable
+            style={styles.documentMenu}
+            onPress={(event) =>
+              event.stopPropagation()
+            }
+          >
+            <Text
+              style={styles.menuTitle}
+              numberOfLines={1}
+            >
+              {doc?.title}
+            </Text>
+
+            <Pressable
+              style={styles.menuAction}
+              onPress={() => {
+                setShowDocumentMenu(false);
+                setEditingDocument(doc);
+              }}
+            >
+              <Ionicons
+                name="create-outline"
+                size={20}
+                color={colors.ink}
+              />
+
+              <Text style={styles.menuActionText}>
+                프로젝트 수정
+              </Text>
+            </Pressable>
+
+            <Pressable
+              style={styles.menuAction}
+              onPress={() => {
+                setShowDocumentMenu(false);
+                confirmDeleteDocument();
+              }}
+            >
+              <Ionicons
+                name="trash-outline"
+                size={20}
+                color={colors.alert}
+              />
+
+              <Text
+                style={[
+                  styles.menuActionText,
+                  { color: colors.alert },
+                ]}
+              >
+                프로젝트 삭제
+              </Text>
+            </Pressable>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      {editingDocument && (
+        <DocumentEditModal
+          document={editingDocument}
+          onSave={handleDocumentEditSave}
+          onClose={() =>
+            setEditingDocument(null)
+          }
+        />
+      )}
+
       {editingTodo && (
         <TodoEditModal
           todo={editingTodo}
@@ -357,6 +553,8 @@ const styles = StyleSheet.create({
   pressed: { opacity: 0.8, transform: [{ scale: 0.98 }] },
     cardHead: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
   docTitle: { flex: 1, fontSize: 17, fontWeight: "700", lineHeight: 24, color: colors.ink },
+  projectActions: { flexDirection: "row", alignItems: "center", gap: spacing.xs },
+  projectMenuButton: { width: 28, height: 28, alignItems: "center", justifyContent: "center" },
   ddayBadge: { paddingHorizontal: spacing.md, paddingVertical: spacing.sm, borderRadius: radius.md },
   ddayText: { fontSize: 18, fontWeight: "700", includeFontPadding: false },
   deadlineText: { fontSize: 13, color: "#4B5565", marginTop: 4 },
@@ -391,4 +589,16 @@ const styles = StyleSheet.create({
   calendarButtonText: { color: colors.stamp, fontSize: 14, fontWeight: "700" },
   tip: { flexDirection: "row", gap: 5, alignItems: "flex-start", paddingHorizontal: 2, marginBottom: spacing.lg },
   tipText: { flex: 1, fontSize: 12, lineHeight: 17, color: colors.muted },
+  menuBackdrop: { flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0, 0, 0, 0.25)", padding: spacing.lg },
+
+documentMenu: { backgroundColor: "#FFFFFF", borderRadius: radius.lg, padding: spacing.md },
+
+menuTitle: {
+  ...type.bodyStrong, paddingHorizontal: spacing.sm, paddingVertical: spacing.sm, borderBottomWidth: 1, borderBottomColor: colors.line },
+
+menuAction: { flexDirection: "row", alignItems: "center", gap: spacing.sm, paddingHorizontal: spacing.sm, paddingVertical: spacing.md },
+
+menuActionText: {
+  ...type.bodyStrong,
+},
 });
