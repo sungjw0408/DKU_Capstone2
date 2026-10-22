@@ -8,6 +8,7 @@ import Badge from "../components/Badge";
 import ProgressBar from "../components/ProgressBar";
 import PrimaryButton from "../components/PrimaryButton";
 import DocumentEditModal from "../components/DocumentEditModal";
+import AccountSidebar from "../components/AccountSidebar";
 import { colors, spacing, type, radius } from "../theme/theme";
 import { listDocuments, getDocument, listTodos, updateTodo, updateDocument, deleteDocument, } from "../services/api";
 import { localPlanDate } from "../utils/preparationPlan";
@@ -33,6 +34,7 @@ export default function HomeScreen({ navigation }) {
   const [selectedDocument, setSelectedDocument] = useState(null);
   const [editingDocument, setEditingDocument] = useState(null);
   const [deletingId, setDeletingId] = useState(null);
+  const [menuOpen, setMenuOpen] = useState(false);
 
   useFocusEffect(useCallback(() => {
     let active = true;
@@ -266,6 +268,10 @@ export default function HomeScreen({ navigation }) {
           <Pressable hitSlop={8}>
             <Ionicons name="notifications-outline" size={22} color={colors.ink} />
           </Pressable>
+          <Pressable hitSlop={8} accessibilityRole="button" accessibilityLabel="메뉴 열기"
+            accessibilityState={{ expanded: menuOpen }} aria-expanded={menuOpen} onPress={() => setMenuOpen(true)}>
+            <Ionicons name="menu-outline" size={22} color={colors.ink} />
+          </Pressable>
         </View>
       </View>
 
@@ -436,6 +442,7 @@ export default function HomeScreen({ navigation }) {
           onPress={() => navigation.navigate("DocumentAdd")}
         />
       </View>
+      <AccountSidebar visible={menuOpen} onClose={() => setMenuOpen(false)} />
     </SafeAreaView>
   );
 }

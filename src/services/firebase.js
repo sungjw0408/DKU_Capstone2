@@ -1,5 +1,5 @@
 // src/services/firebase.js
-import { initializeApp } from "firebase/app";
+import { getApp, getApps, initializeApp } from "firebase/app";
 import { getFirestore } from "firebase/firestore";
 
 const firebaseConfig = {
@@ -13,7 +13,7 @@ const firebaseConfig = {
   };
 
 // Firebase 초기화
-const app = initializeApp(firebaseConfig);
+export const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
 
 // 다른 파일(화면)에서 쓸 수 있도록 db 내보내기
 export const db = getFirestore(app);

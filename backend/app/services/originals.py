@@ -13,6 +13,7 @@ import json
 import re
 import struct
 import threading
+import hashlib
 from functools import lru_cache
 from pathlib import Path
 
@@ -25,6 +26,26 @@ _SAFE_ID = re.compile(r"^[A-Za-z0-9_-]+$")
 _SKIP = re.compile(r"[\s\"'“”‘’`·•▶▷■□◆◇○●※]")  # utils.text.normalize 와 같은 문자 집합
 _MIN_TEXT_CHARS = 30
 _lock = threading.Lock()  # pdfium 은 스레드 안전하지 않다
+
+
+def user_prefix(uid: str) -> str:
+    return "u-" + hashlib.sha256(uid.encode("utf-8")).hexdigest() + "-"
+
+
+def scoped_id(uid: str | None, doc_id: str) -> str:
+    if not _SAFE_ID.fullmatch(doc_id):
+        raise ValueError("문서 ID가 올바르지 않습니다.")
+    return user_prefix(uid) + doc_id if uid else doc_id
+
+
+def delete_user_originals(uid: str) -> int:
+    # 탈퇴에서는 삭제 실패를 숨기지 않는다. 성공해야 계정 삭제를 완료한다.
+    count = 0
+    for path in _dir().glob(user_prefix(uid) + "*"):
+        path.unlink(missing_ok=True)
+        count += 1
+    _pdf_layout.cache_clear()
+    return count
 
 
 def _dir() -> Path:

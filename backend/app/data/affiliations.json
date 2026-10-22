@@ -1,0 +1,337 @@
+{
+  "version": "2027-2026-10-21",
+  "university": {
+    "id": "dankook",
+    "name": "단국대학교",
+    "campusId": "jukjeon",
+    "campusName": "죽전"
+  },
+  "sources": [
+    "https://www.adiga.kr/ucp/uvt/uni/univDetailSubject.do?menuId=PCUVTINF2000&unvCd=0000082&searchSyr=2027",
+    "https://dankook.ac.kr/faculty",
+    "https://dankook.ac.kr/sw_convergence"
+  ],
+  "colleges": [
+    {
+      "id": "liberal-arts",
+      "name": "문과대학",
+      "departments": [
+        {
+          "id": "liberal-arts-korean",
+          "name": "국어국문학과"
+        },
+        {
+          "id": "liberal-arts-history",
+          "name": "사학과"
+        },
+        {
+          "id": "liberal-arts-philosophy",
+          "name": "철학과"
+        },
+        {
+          "id": "liberal-arts-british-american",
+          "name": "영미인문학과"
+        }
+      ]
+    },
+    {
+      "id": "law",
+      "name": "법과대학",
+      "departments": [
+        {
+          "id": "law-law",
+          "name": "법학과"
+        }
+      ]
+    },
+    {
+      "id": "social-sciences",
+      "name": "사회과학대학",
+      "departments": [
+        {
+          "id": "social-sciences-politics",
+          "name": "정치외교학과"
+        },
+        {
+          "id": "social-sciences-public-administration",
+          "name": "행정학과"
+        },
+        {
+          "id": "social-sciences-urban-real-estate",
+          "name": "도시계획·부동산학부"
+        },
+        {
+          "id": "social-sciences-media",
+          "name": "미디어커뮤니케이션학부"
+        },
+        {
+          "id": "social-sciences-counseling",
+          "name": "상담학과"
+        }
+      ]
+    },
+    {
+      "id": "business-economics",
+      "name": "경영경제대학",
+      "departments": [
+        {
+          "id": "business-economics-economics",
+          "name": "경제학과"
+        },
+        {
+          "id": "business-economics-trade",
+          "name": "무역학과"
+        },
+        {
+          "id": "business-economics-business",
+          "name": "경영학부"
+        },
+        {
+          "id": "business-economics-industrial-night",
+          "name": "산업경영학과(야)"
+        }
+      ]
+    },
+    {
+      "id": "engineering",
+      "name": "공과대학",
+      "departments": [
+        {
+          "id": "engineering-electrical",
+          "name": "전자전기공학과"
+        },
+        {
+          "id": "engineering-semiconductor",
+          "name": "융합반도체공학과"
+        },
+        {
+          "id": "engineering-polymer",
+          "name": "고분자시스템공학부 고분자공학전공"
+        },
+        {
+          "id": "engineering-materials",
+          "name": "고분자시스템공학부 융합소재공학전공",
+          "aliases": [
+            "고분자시스템공학부 파이버융합소재공학전공"
+          ]
+        },
+        {
+          "id": "engineering-infrastructure",
+          "name": "인프라건설공학과",
+          "aliases": [
+            "토목환경공학과"
+          ]
+        },
+        {
+          "id": "engineering-mechanical",
+          "name": "기계공학과"
+        },
+        {
+          "id": "engineering-chemical",
+          "name": "화학공학과"
+        },
+        {
+          "id": "engineering-architecture",
+          "name": "건축학부 건축학전공(5년제)"
+        },
+        {
+          "id": "engineering-architectural-engineering",
+          "name": "건축학부 건축공학전공"
+        }
+      ]
+    },
+    {
+      "id": "sw-convergence",
+      "name": "SW융합대학",
+      "aliases": [
+        "AI융합대학"
+      ],
+      "departments": [
+        {
+          "id": "sw-convergence-software",
+          "name": "소프트웨어학과"
+        },
+        {
+          "id": "sw-convergence-computer",
+          "name": "컴퓨터공학과"
+        },
+        {
+          "id": "sw-convergence-statistics",
+          "name": "통계데이터사이언스학과"
+        },
+        {
+          "id": "sw-convergence-cybersecurity",
+          "name": "사이버보안학과"
+        },
+        {
+          "id": "sw-convergence-artificial-intelligence",
+          "name": "인공지능학과"
+        },
+        {
+          "id": "sw-convergence-sw-convergence",
+          "name": "SW융합학부"
+        },
+        {
+          "id": "sw-convergence-ai-architecture",
+          "name": "AI건축융합학과"
+        }
+      ]
+    },
+    {
+      "id": "education",
+      "name": "사범대학",
+      "departments": [
+        {
+          "id": "education-sino-korean",
+          "name": "한문교육과"
+        },
+        {
+          "id": "education-special-education",
+          "name": "특수교육과"
+        },
+        {
+          "id": "education-mathematics-education",
+          "name": "수학교육과"
+        },
+        {
+          "id": "education-science-education",
+          "name": "과학교육과"
+        },
+        {
+          "id": "education-physical-education",
+          "name": "체육교육과"
+        }
+      ]
+    },
+    {
+      "id": "music-arts",
+      "name": "음악·예술대학",
+      "departments": [
+        {
+          "id": "music-arts-film",
+          "name": "공연영화학부 영화전공"
+        },
+        {
+          "id": "music-arts-theater",
+          "name": "공연영화학부 연극전공"
+        },
+        {
+          "id": "music-arts-musical-directing",
+          "name": "공연영화학부 뮤지컬전공(연출)"
+        },
+        {
+          "id": "music-arts-musical-acting",
+          "name": "공연영화학부 뮤지컬전공(연기)"
+        },
+        {
+          "id": "music-arts-ceramic",
+          "name": "도예과"
+        },
+        {
+          "id": "music-arts-communication-design",
+          "name": "디자인학부 커뮤니케이션디자인전공"
+        },
+        {
+          "id": "music-arts-fashion",
+          "name": "디자인학부 패션산업디자인전공"
+        },
+        {
+          "id": "music-arts-dance",
+          "name": "무용과"
+        },
+        {
+          "id": "music-arts-piano",
+          "name": "음악학부 피아노전공"
+        },
+        {
+          "id": "music-arts-orchestra",
+          "name": "음악학부 관현악전공"
+        },
+        {
+          "id": "music-arts-vocal",
+          "name": "음악학부 성악전공"
+        },
+        {
+          "id": "music-arts-composition",
+          "name": "음악학부 작곡전공"
+        },
+        {
+          "id": "music-arts-korean-music",
+          "name": "음악학부 국악전공"
+        }
+      ]
+    },
+    {
+      "id": "primus",
+      "name": "프리무스국제대학",
+      "departments": [
+        {
+          "id": "primus-international-business",
+          "name": "국제경영학과"
+        },
+        {
+          "id": "primus-mobile-systems",
+          "name": "모바일시스템공학과"
+        },
+        {
+          "id": "primus-global-humanities",
+          "name": "글로벌기초교육학부 인문사회계열"
+        },
+        {
+          "id": "primus-global-science",
+          "name": "글로벌기초교육학부 자연공학계열"
+        },
+        {
+          "id": "primus-global-arts",
+          "name": "글로벌기초교육학부 예체능계열"
+        },
+        {
+          "id": "primus-korean-studies",
+          "name": "한국학과"
+        },
+        {
+          "id": "primus-biomaterials",
+          "name": "바이오소재융합공학과"
+        },
+        {
+          "id": "primus-acting-film",
+          "name": "연기영상예술학과"
+        }
+      ]
+    },
+    {
+      "id": "toegye",
+      "name": "퇴계혁신칼리지",
+      "departments": [
+        {
+          "id": "toegye-broad",
+          "name": "퇴계혁신칼리지(광역)"
+        },
+        {
+          "id": "toegye-broad-humanities",
+          "name": "퇴계혁신칼리지(광역)<인문>"
+        },
+        {
+          "id": "toegye-broad-natural",
+          "name": "퇴계혁신칼리지(광역)<자연>"
+        },
+        {
+          "id": "toegye-humanities",
+          "name": "퇴계혁신칼리지(인문계열광역)"
+        },
+        {
+          "id": "toegye-social",
+          "name": "퇴계혁신칼리지(사회계열광역)"
+        },
+        {
+          "id": "toegye-engineering",
+          "name": "퇴계혁신칼리지(공학계열광역)"
+        },
+        {
+          "id": "toegye-sw",
+          "name": "퇴계혁신칼리지(SW융합계열광역)"
+        }
+      ]
+    }
+  ]
+}
