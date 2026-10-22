@@ -1,0 +1,22 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isOwner(uid) {
+      return request.auth != null && request.auth.uid == uid
+        && !exists(/databases/$(database)/documents/accountDeletions/$(uid));
+    }
+    match /users/{uid} {
+      allow read: if isOwner(uid);
+      // 프로필·분석 결과·일정의 쓰기는 인증과 소유권을 확인한 서버만 수행한다.
+      allow write: if false;
+      match /{path=**} {
+        allow read: if isOwner(uid);
+        allow write: if false;
+      }
+    }
+    // 공용 과거 데이터와 삭제 작업 상태를 포함해 나머지 클라이언트 접근은 차단한다.
+    match /{path=**} {
+      allow read, write: if false;
+    }
+  }
+}

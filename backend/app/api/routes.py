@@ -5,11 +5,12 @@ from datetime import datetime
 from typing import Optional
 from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, File, Form, HTTPException, Response, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile
 from google.genai import errors as genai_errors
 from pydantic import BaseModel
 
 from app.agents import intake
+from app.api.authn import active_uid
 from app.config import get_settings
 from app.llm import get_llm
 from app.schemas import AnalysisResult
@@ -21,6 +22,14 @@ from app.utils.text import split_sentences
 
 router = APIRouter(prefix="/api")
 MAX_UPLOAD_BYTES = 15 * 1024 * 1024
+
+
+def user_store(uid: str = Depends(active_uid)):
+    return get_store(uid)
+
+
+def _original_id(store, doc_id):
+    return originals.scoped_id(store.uid, doc_id)
 
 
 def _today():
@@ -39,7 +48,8 @@ def image_mime(file: UploadFile) -> str:
             "heic": "image/heic", "heif": "image/heif"}.get(ext, "image/jpeg")
 
 
-def _save_original(doc_id, data, file, source):
+def _save_original(doc_id, data, file, source, store):
+    doc_id = _original_id(store, doc_id)
     """원문 근거 화면용 원본 보관 (PDF·사진). 실패해도 분석은 계속한다 (근거 화면은 텍스트 보기로 대체)."""
     if data is None:
         return
@@ -52,28 +62,27 @@ def _save_original(doc_id, data, file, source):
         pass
 
 
-def _record(doc_id):
-    record = get_store().get_record(doc_id)
+def _record(doc_id, store):
+    record = store.get_record(doc_id)
     if not record:
         raise HTTPException(404, "문서를 찾을 수 없습니다.")
     return record
 
 
-def _response(analysis, record=None):
-    record = record or _record(analysis.document_id)
+def _response(analysis, store, record=None):
+    record = record or _record(analysis.document_id, store)
     return {"documentId": analysis.document_id, "view": to_analysis_detail(analysis),
             "analysis": analysis, "plan": record.get("plan"), "sourceKind": record.get("source_kind", "text")}
 
 
-def _analysis(doc_id):
-    record = _record(doc_id)
+def _analysis(doc_id, store):
+    record = _record(doc_id, store)
     if not record.get("analysis"):
         raise HTTPException(409, {"message": record.get("error") or "아직 문서 분석이 완료되지 않았습니다.", "documentId": doc_id})
     return AnalysisResult.model_validate(record["analysis"])
 
 
-def _analyze_saved(doc_id, llm):
-    store = get_store()
+def _analyze_saved(doc_id, llm, store):
     source = store.get_source(doc_id)
     if not source:
         raise HTTPException(404, "저장된 원문을 찾을 수 없습니다.")
@@ -92,11 +101,11 @@ def _analyze_saved(doc_id, llm):
         store.save(analysis, source)
     except ValueError as exc:
         raise HTTPException(413, str(exc)) from exc
-    return _response(analysis)
+    return _response(analysis, store)
 
 
 @router.post("/documents/analyze")
-def analyze_document(file: Optional[UploadFile] = File(None), text: Optional[str] = Form(None)):
+def analyze_document(file: Optional[UploadFile] = File(None), text: Optional[str] = Form(None), store=Depends(user_store)):
     llm = get_llm()
     data = None
     try:
@@ -121,35 +130,35 @@ def analyze_document(file: Optional[UploadFile] = File(None), text: Optional[str
         raise HTTPException(503, "문서의 문자 추출에 실패했습니다. 잠시 후 다시 시도해 주세요.") from exc
     doc_id = f"doc-{uuid.uuid4().hex}"
     try:
-        get_store().save_source(doc_id, source, title)
+        store.save_source(doc_id, source, title)
     except ValueError as exc:
         raise HTTPException(413, str(exc)) from exc
-    _save_original(doc_id, data, file, source)
-    return _analyze_saved(doc_id, llm)
+    _save_original(doc_id, data, file, source, store)
+    return _analyze_saved(doc_id, llm, store)
 
 
 @router.post("/documents/{doc_id}/retry")
-def retry_document(doc_id: str):
-    record = _record(doc_id)
+def retry_document(doc_id: str, store=Depends(user_store)):
+    record = _record(doc_id, store)
     if record.get("analysis"):
-        return _response(AnalysisResult.model_validate(record["analysis"]), record)
-    return _analyze_saved(doc_id, get_llm())
+        return _response(AnalysisResult.model_validate(record["analysis"]), store, record)
+    return _analyze_saved(doc_id, get_llm(), store)
 
 
 @router.get("/documents")
-def list_documents():
-    return [document_list_item(doc_id, record, _today()) for doc_id, record in get_store().list_records()]
+def list_documents(store=Depends(user_store)):
+    return [document_list_item(doc_id, record, _today()) for doc_id, record in store.list_records()]
 
 
 @router.get("/documents/{doc_id}")
-def get_document(doc_id: str):
-    record = _record(doc_id)
+def get_document(doc_id: str, store=Depends(user_store)):
+    record = _record(doc_id, store)
     if not record.get("analysis"):
         raise HTTPException(409, {"message": record.get("error") or "아직 문서 분석이 완료되지 않았습니다.", "documentId": doc_id})
-    return _response(AnalysisResult.model_validate(record["analysis"]), record)
+    return _response(AnalysisResult.model_validate(record["analysis"]), store, record)
 
 @router.patch("/documents/{doc_id}")
-def update_document(doc_id: str, body: DocumentPatch):
+def update_document(doc_id: str, body: DocumentPatch, store=Depends(user_store)):
     changes = body.model_dump(
         exclude_unset=True
     )
@@ -161,7 +170,7 @@ def update_document(doc_id: str, body: DocumentPatch):
         )
 
     try:
-        updated = get_store().mutate_document(
+        updated = store.mutate_document(
             doc_id,
             changes,
         )
@@ -190,51 +199,51 @@ def update_document(doc_id: str, body: DocumentPatch):
 
 
 @router.delete("/documents/{doc_id}")
-def delete_document(doc_id: str):
+def delete_document(doc_id: str, store=Depends(user_store)):
     try:
-        result = get_store().delete_document(doc_id)
+        result = store.delete_document(doc_id)
     except KeyError as exc:
         raise HTTPException(
             404,
             "문서를 찾을 수 없습니다."
         ) from exc
 
-    originals.delete_originals(doc_id)
+    originals.delete_originals(_original_id(store, doc_id))
 
     return result
 
 @router.get("/documents/{doc_id}/source")
-def get_source(doc_id: str):
+def get_source(doc_id: str, store=Depends(user_store)):
     """원문 근거 화면용: 페이지별 원문과 문장 오프셋 + (PDF·사진이면) 원본 페이지 크기와 근거 위치"""
-    source = get_store().get_source(doc_id)
+    source = store.get_source(doc_id)
     if not source:
         raise HTTPException(404, "원문을 찾을 수 없습니다.")
-    record = get_store().get_record(doc_id) or {}
+    record = store.get_record(doc_id) or {}
     analysis = AnalysisResult.model_validate(record["analysis"]) if record.get("analysis") else None
-    layout = originals.page_layout(doc_id)
+    layout = originals.page_layout(_original_id(store, doc_id))
     return {
         "kind": source.source_kind,
         "pages": source.pages,
         "sentences": split_sentences(source),
         # 원본 이미지로 보여줄 수 있으면 페이지 크기와 근거 위치(페이지 비율 좌표)를 함께 준다
         "pageImages": layout["pages"] if layout else None,
-        "highlights": originals.highlights(doc_id, analysis) if layout and analysis else {},
+        "highlights": originals.highlights(_original_id(store, doc_id), analysis) if layout and analysis else {},
     }
 
 
 @router.get("/documents/{doc_id}/pages/{page_no}/image")
-def get_page_image(doc_id: str, page_no: int, width: int = 1000):
+def get_page_image(doc_id: str, page_no: int, width: int = 1000, store=Depends(user_store)):
     """원본 페이지 이미지 (PDF 는 PNG 로 렌더링, 사진은 원본 그대로) — 원문 근거 화면 · 썸네일용"""
-    if not get_store().get_record(doc_id) or originals.page_layout(doc_id) is None:
+    if not store.get_record(doc_id) or originals.page_layout(_original_id(store, doc_id)) is None:
         raise HTTPException(404, "원본 페이지 이미지를 찾을 수 없습니다.")
     try:
-        found = originals.page_image(doc_id, page_no, width)
+        found = originals.page_image(_original_id(store, doc_id), page_no, width)
     except RuntimeError as e:
         raise HTTPException(500, str(e)) from e
     if found is None:
         raise HTTPException(404, "페이지를 찾을 수 없습니다.")
     body, mime = found
-    return Response(body, media_type=mime, headers={"Cache-Control": "public, max-age=86400"})
+    return Response(body, media_type=mime, headers={"Cache-Control": "private, no-store", "Vary": "Authorization"})
 
 
 class ConfirmBody(BaseModel):
@@ -243,8 +252,8 @@ class ConfirmBody(BaseModel):
 
 
 @router.post("/documents/{doc_id}/fields/{field_id}/confirm")
-def confirm_field(doc_id: str, field_id: str, body: ConfirmBody):
-    analysis = _analysis(doc_id)
+def confirm_field(doc_id: str, field_id: str, body: ConfirmBody, store=Depends(user_store)):
+    analysis = _analysis(doc_id, store)
     field = next((field for field in analysis.fields if field.id == field_id), None)
     if not field:
         raise HTTPException(404, "필드를 찾을 수 없습니다.")
@@ -255,25 +264,25 @@ def confirm_field(doc_id: str, field_id: str, body: ConfirmBody):
     field.status = "user_confirmed"
     field.confidence = 100
     analysis.needs_review = any(field.status in ("needs_review", "unverified") for field in analysis.fields)
-    get_store().update_analysis(analysis)
-    return _response(analysis)
+    store.update_analysis(analysis)
+    return _response(analysis, store)
 
 
 @router.delete("/documents/{doc_id}/fields/{field_id}")
-def reject_field(doc_id: str, field_id: str):
-    analysis = _analysis(doc_id)
+def reject_field(doc_id: str, field_id: str, store=Depends(user_store)):
+    analysis = _analysis(doc_id, store)
     before = len(analysis.fields)
     analysis.fields = [field for field in analysis.fields if field.id != field_id]
     if len(analysis.fields) == before:
         raise HTTPException(404, "필드를 찾을 수 없습니다.")
     analysis.needs_review = any(field.status in ("needs_review", "unverified") for field in analysis.fields)
-    get_store().update_analysis(analysis)
-    return _response(analysis)
+    store.update_analysis(analysis)
+    return _response(analysis, store)
 
 
-def _save_plan(doc_id, body, registered=False):
+def _save_plan(doc_id, body, store, registered=False):
     try:
-        return {"plan": get_store().save_plan(doc_id, body, registered)}
+        return {"plan": store.save_plan(doc_id, body, registered)}
     except KeyError as exc:
         raise HTTPException(404, "분석된 문서를 찾을 수 없습니다.") from exc
     except RevisionConflict as exc:
@@ -283,24 +292,24 @@ def _save_plan(doc_id, body, registered=False):
 
 
 @router.put("/documents/{doc_id}/plan")
-def save_plan(doc_id: str, body: PlanSave):
-    return _save_plan(doc_id, body)
+def save_plan(doc_id: str, body: PlanSave, store=Depends(user_store)):
+    return _save_plan(doc_id, body, store)
 
 
 @router.post("/documents/{doc_id}/plan/register")
-def register_plan(doc_id: str, body: PlanSave):
+def register_plan(doc_id: str, body: PlanSave, store=Depends(user_store)):
     if not any(not step.isDeadline for step in body.steps):
         raise HTTPException(422, "등록할 준비 일정을 추가해 주세요.")
-    return _save_plan(doc_id, body, registered=True)
+    return _save_plan(doc_id, body, store, registered=True)
 
 
 @router.get("/todos")
-def list_todos(document_id: str | None = None):
-    return get_store().list_todos(document_id)
+def list_todos(document_id: str | None = None, store=Depends(user_store)):
+    return store.list_todos(document_id)
 
 
 @router.patch("/todos/{item_id}")
-def update_todo(item_id: str, body: TodoPatch):
+def update_todo(item_id: str, body: TodoPatch, store=Depends(user_store)):
     changes = body.model_dump(exclude_unset=True)
 
     if not changes:
@@ -310,7 +319,7 @@ def update_todo(item_id: str, body: TodoPatch):
         )
 
     try:
-        plan = get_store().mutate_todo(
+        plan = store.mutate_todo(
             item_id,
             changes=changes,
         )
@@ -334,9 +343,9 @@ def update_todo(item_id: str, body: TodoPatch):
 
 
 @router.delete("/todos/{item_id}")
-def delete_todo(item_id: str):
+def delete_todo(item_id: str, store=Depends(user_store)):
     try:
-        get_store().mutate_todo(item_id, delete=True)
+        store.mutate_todo(item_id, delete=True)
         return {"deleted": True}
     except KeyError as exc:
         raise HTTPException(404, "할 일을 찾을 수 없습니다.") from exc

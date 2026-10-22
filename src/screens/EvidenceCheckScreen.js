@@ -12,14 +12,14 @@ import {
   ActivityIndicator,
   Alert,
   Platform,
-  Image,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import PrimaryButton from "../components/PrimaryButton";
+import AuthenticatedPageImage from "../components/AuthenticatedPageImage";
 import { colors, spacing, radius } from "../theme/theme";
 import { analysisDetail as mockDetail, evidenceSource as mockSource } from "../data/mockData";
-import { confirmField, rejectField, getSource, pageImageUrl } from "../services/api";
+import { confirmField, rejectField, getSource } from "../services/api";
 
 // ─────────────────────────── 화면 상수 ───────────────────────────
 const UI = {
@@ -513,8 +513,8 @@ export default function EvidenceCheckScreen({ navigation, route }) {
                 >
                   {imageMode ? (
                     <View style={[styles.paper, { width: paperW, height: paperH }]}>
-                      <Image
-                        source={{ uri: pageImageUrl(documentId, page, 1200) }}
+                      <AuthenticatedPageImage
+                        documentId={documentId} page={page} width={1200}
                         style={{ width: paperW, height: paperH }}
                         resizeMode="contain"
                       />
@@ -572,7 +572,7 @@ export default function EvidenceCheckScreen({ navigation, route }) {
                   <View style={[styles.thumb, on && styles.thumbOn]}>
                     {imageMode ? (
                       <View style={{ width: tw, height: th }}>
-                        <Image source={{ uri: pageImageUrl(documentId, p, 200) }} style={{ width: tw, height: th }} />
+                        <AuthenticatedPageImage documentId={documentId} page={p} width={200} style={{ width: tw, height: th }} />
                         <Boxes boxes={boxesOn(p)} focusIds={focusIds} showAll width={tw} height={th} />
                       </View>
                     ) : (

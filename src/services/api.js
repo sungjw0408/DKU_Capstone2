@@ -4,34 +4,48 @@
 //  - Android 에뮬레이터: http://10.0.2.2:8000
 //  - 웹 / iOS 시뮬레이터: http://localhost:8000
 import { Platform } from "react-native";
+import { currentAuthUser } from "./auth";
 
 const BASE_URL = (process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:8000").replace(/\/$/, "");
 const TIMEOUT_MS = 120000; // Gemini 분석은 수 초~수십 초 (사진은 글자 받아쓰기까지 해서 더 걸림)
 
-async function request(path, options = {}) {
+export async function request(path, options = {}, config = {}) {
+  const user = config.authenticated === false ? null : (config.user || currentAuthUser());
+  if (config.authenticated !== false && !user) {
+    const error = new Error("로그인이 필요해요.");
+    error.status = 401;
+    throw error;
+  }
+  const headers = new Headers(options.headers || {});
+  if (user) headers.set("Authorization", `Bearer ${await user.getIdToken()}`);
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  const timer = setTimeout(() => controller.abort(), config.timeoutMs ?? TIMEOUT_MS);
   let res;
   try {
-    res = await fetch(`${BASE_URL}${path}`, { ...options, signal: controller.signal });
+    res = await fetch(`${BASE_URL}${path}`, { ...options, headers, cache: "no-store", signal: controller.signal });
   } catch (e) {
-    if (e.name === "AbortError") throw new Error("분석 시간이 너무 오래 걸려요. 잠시 후 다시 시도해 주세요.");
+    if (e.name === "AbortError") throw new Error(config.timeoutMessage || "분석 시간이 너무 오래 걸려요. 잠시 후 다시 시도해 주세요.");
     throw new Error(`서버에 연결할 수 없어요 (${BASE_URL}). 서버가 켜져 있는지, 주소가 맞는지 확인해 주세요.`);
   } finally {
     clearTimeout(timer);
   }
+  if (user && currentAuthUser()?.uid !== user.uid) {
+    throw new Error("로그인한 계정이 변경됐어요. 현재 화면에서 다시 시도해 주세요.");
+  }
+  if (res.ok && config.responseType === "blob") return res.blob();
   const body = await res.json().catch(() => ({}));
   if (!res.ok) {
     const detail = typeof body.detail === "string" ? body.detail : body.detail?.message || JSON.stringify(body.detail ?? body);
     const error = new Error(detail || `요청 실패 (${res.status})`);
     error.status = res.status;
     error.documentId = body.detail?.documentId;
+    error.code = body.detail?.code;
     throw error;
   }
   return body;
 }
 
-export const checkHealth = () => request("/health");
+export const checkHealth = () => request("/health", {}, { authenticated: false });
 
 // 붙여넣은 텍스트 분석 → { documentId, view, analysis }
 export function analyzeText(text) {
@@ -105,8 +119,15 @@ export const editTodo = (id, patch) =>
 export const deleteTodo = (id) => request(`/api/todos/${encodeURIComponent(id)}`, { method: "DELETE" });
 
 // 원문 근거 화면: 백엔드가 렌더링한 원본 PDF 페이지 이미지 주소 (page 는 1부터)
-export const pageImageUrl = (id, page, width = 1000) =>
-  `${BASE_URL}/api/documents/${id}/pages/${page}/image?width=${width}`;
+export async function getPageImage(id, page, width = 1000) {
+  const blob = await request(`/api/documents/${encodeURIComponent(id)}/pages/${page}/image?width=${width}`, {}, { responseType: "blob" });
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(new Error("원문 페이지 이미지를 불러오지 못했어요."));
+    reader.readAsDataURL(blob);
+  });
+}
 
 // '확인 필요' 항목 승인(수정값 선택) → 갱신된 { view, analysis }
 export function confirmField(docId, fieldId, patch = {}) {

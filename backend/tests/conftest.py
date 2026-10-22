@@ -19,3 +19,26 @@ def source():
 @pytest.fixture
 def verifier(source):
     return Verifier(source, split_sentences(source), threshold=80, now=NOW)
+
+
+@pytest.fixture(autouse=True)
+def account_state_for_tests(monkeypatch):
+    from app.services import account_state
+    state = account_state.MemoryAccountState()
+    monkeypatch.setattr(account_state, "_state_store", lambda: state)
+    return state
+
+
+@pytest.fixture(autouse=True)
+def legacy_api_login(request):
+    # 문서 동작 회귀 테스트는 인증된 사용자로 실행한다. 인증/격리 검사는 별도 테스트에서 수행한다.
+    if request.module.__name__.split(".")[-1] not in {"test_api", "test_persistence", "test_image_source", "test_source_pages"}:
+        yield
+        return
+    from app.main import app
+    from app.api.authn import active_uid
+    app.dependency_overrides[active_uid] = lambda: "regression-user"
+    try:
+        yield
+    finally:
+        app.dependency_overrides.pop(active_uid, None)

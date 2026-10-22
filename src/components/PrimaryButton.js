@@ -9,6 +9,7 @@ export default function PrimaryButton({ label, onPress, tone = "ink", disabled, 
     <Pressable
       accessibilityRole="button"
       accessibilityState={{ disabled: !!disabled }}
+      disabled={!!disabled}
       onPress={disabled ? undefined : onPress}
       style={({ pressed }) => [
         styles.btn,

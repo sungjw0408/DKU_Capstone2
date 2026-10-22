@@ -10,9 +10,10 @@ from threading import RLock
 from app.config import get_settings
 from app.schemas import AnalysisResult, SourceDocument
 from app.services.preparation_plan import PlanSave, RevisionConflict, plan_todos
+from app.services.firebase_admin_client import get_firebase_app
 
-_firebase_init_lock = RLock()
 _store_lock = RLock()
+_user_memory_stores = {}
 
 
 def _now():
@@ -80,7 +81,8 @@ def _apply_todo_changes(step, changes):
 
 
 class MemoryStore:
-    def __init__(self):
+    def __init__(self, uid=None):
+        self.uid = uid
         self._data = {}
         self._sources = {}
         self._todos = {}
@@ -244,28 +246,22 @@ class MemoryStore:
 
 
 class FirestoreStore:
-    def __init__(self):
-        import firebase_admin
-        from firebase_admin import credentials, firestore
+    def __init__(self, uid=None):
+        from firebase_admin import firestore
+        self.uid = uid
+        self.db = firestore.client(app=get_firebase_app())
+        self.account = self.db.collection("users").document(uid) if uid else None
+        self.col = self.account.collection("documents") if self.account else self.db.collection("documents")
+        self.todos = self.account.collection("todos") if self.account else self.db.collection("todos")
 
-        settings = get_settings()
-
-        # 홈에서 문서와 할 일을 동시에 요청해도 Firebase 앱은 한 번만 초기화한다.
-        with _firebase_init_lock:
-            try:
-                firebase_admin.get_app()
-            except ValueError:
-                cred = credentials.Certificate(
-                    settings.google_application_credentials
-                ) if settings.google_application_credentials else None
-                firebase_admin.initialize_app(
-                    cred,
-                    {"projectId": settings.gcp_project} if settings.gcp_project else None,
-                )
-
-        self.db = firestore.client()
-        self.col = self.db.collection("documents")
-        self.todos = self.db.collection("todos")
+    def _guard(self, transaction=None):
+        if self.uid:
+            from app.services.account_state import AccountDeleting
+            marker = self.db.collection("accountDeletions").document(self.uid)
+            if marker.get(transaction=transaction).exists:
+                raise AccountDeleting()
+            if not self.account.get(transaction=transaction).exists:
+                raise AccountDeleting()
 
     def save_source(self, doc_id, source, title="문서"):
         ref = self.col.document(doc_id)
@@ -281,20 +277,21 @@ class FirestoreStore:
         ) > 8_000_000:
             raise ValueError("추출된 원문이 너무 큽니다. 문서를 나눠 올려 주세요.")
 
-        batch = self.db.batch()
-        batch.set(ref, {"title": title, "created_at": _now(), "status": "analyzing",
-                        "source_kind": source.source_kind})
-        batch.set(ref.collection("source").document("raw"), {
-            "source_kind": source.source_kind,
-            "masked_count": source.masked_count,
-            "page_count": len(source.pages),
-            "chunk_count": len(chunks),
-        })
+        from firebase_admin import firestore
 
-        for index, chunk in enumerate(chunks):
-            batch.set(ref.collection("sourceChunks").document(f"{index:06d}"), chunk)
+        @firestore.transactional
+        def save(transaction):
+            self._guard(transaction)
+            transaction.set(ref, {"title": title, "created_at": _now(), "status": "analyzing",
+                                  "source_kind": source.source_kind})
+            transaction.set(ref.collection("source").document("raw"), {
+                "source_kind": source.source_kind, "masked_count": source.masked_count,
+                "page_count": len(source.pages), "chunk_count": len(chunks),
+            })
+            for index, chunk in enumerate(chunks):
+                transaction.set(ref.collection("sourceChunks").document(f"{index:06d}"), chunk)
 
-        batch.commit()
+        save(self.db.transaction())
 
     def get_source(self, doc_id):
         ref = self.col.document(doc_id)
@@ -349,16 +346,30 @@ class FirestoreStore:
         if not ref.get().exists:
             self.save_source(analysis.document_id, source, analysis.title)
 
-        summary = _summary(analysis)
-        _check_size({**(self.get_record(analysis.document_id) or {}), **summary})
-        ref.update(summary)
+        from firebase_admin import firestore
+
+        @firestore.transactional
+        def save(transaction):
+            self._guard(transaction)
+            snap = ref.get(transaction=transaction)
+            if not snap.exists:
+                raise KeyError(analysis.document_id)
+            summary = _summary(analysis)
+            _check_size({**snap.to_dict(), **summary})
+            transaction.update(ref, summary)
+
+        save(self.db.transaction())
 
     def mark_failed(self, doc_id, message):
-        self.col.document(doc_id).update({
-            "status": "analysis_failed",
-            "error": message,
-            "updated_at": _now(),
-        })
+        from firebase_admin import firestore
+
+        @firestore.transactional
+        def fail(transaction):
+            self._guard(transaction)
+            transaction.update(self.col.document(doc_id), {
+                "status": "analysis_failed", "error": message, "updated_at": _now(),
+            })
+        fail(self.db.transaction())
 
     def _write_plan(self, transaction, doc_id, record, plan):
         from google.cloud.firestore_v1.base_query import FieldFilter
@@ -391,6 +402,7 @@ class FirestoreStore:
 
         @firestore.transactional
         def save(transaction):
+            self._guard(transaction)
             snap = self.col.document(doc_id).get(transaction=transaction)
 
             if not snap.exists or not snap.to_dict().get("analysis"):
@@ -409,6 +421,7 @@ class FirestoreStore:
 
         @firestore.transactional
         def update(transaction):
+            self._guard(transaction)
             ref = self.col.document(analysis.document_id)
             snap = ref.get(transaction=transaction)
 
@@ -446,6 +459,7 @@ class FirestoreStore:
 
         @firestore.transactional
         def mutate(transaction):
+            self._guard(transaction)
             ref = self.col.document(doc_id)
             snap = ref.get(transaction=transaction)
 
@@ -535,6 +549,8 @@ class FirestoreStore:
     def delete_document(self, doc_id):
         from google.cloud.firestore_v1.base_query import FieldFilter
 
+        self._guard()
+
         ref = self.col.document(doc_id)
 
         if not ref.get().exists:
@@ -588,6 +604,7 @@ class FirestoreStore:
 
         @firestore.transactional
         def mutate(transaction):
+            self._guard(transaction)
             todo_ref = self.todos.document(item_id)
             snap = todo_ref.get(transaction=transaction)
 
@@ -647,7 +664,18 @@ def _create_store():
     return FirestoreStore() if get_settings().storage_backend == "firestore" else MemoryStore()
 
 
-def get_store():
+def get_store(uid=None):
     # lru_cache는 최초 동시 호출에서 생성 함수를 여러 번 실행할 수 있다.
     with _store_lock:
-        return _create_store()
+        if uid is None:
+            return _create_store()  # 기존 저장소 도구/테스트용. 개인 API는 항상 uid를 전달한다.
+        if get_settings().storage_backend == "firestore":
+            return FirestoreStore(uid)
+        if uid not in _user_memory_stores:
+            _user_memory_stores[uid] = MemoryStore(uid)
+        return _user_memory_stores[uid]
+
+
+def forget_memory_user(uid):
+    with _store_lock:
+        _user_memory_stores.pop(uid, None)

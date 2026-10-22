@@ -19,7 +19,7 @@ from tests.conftest import SAMPLE
 @pytest.fixture
 def saved_document(monkeypatch):
     store = MemoryStore()
-    monkeypatch.setattr(routes, "get_store", lambda: store)
+    monkeypatch.setattr(routes, "get_store", lambda uid: store)
     monkeypatch.setattr(routes, "get_llm", MockProvider)
     client = TestClient(app)
     result = client.post("/api/documents/analyze", data={"text": SAMPLE}).json()
@@ -144,7 +144,7 @@ def test_rejected_analysis_todo_is_removed_without_renumbering_saved_steps(saved
 
 def test_failed_ai_keeps_source_and_retry_uses_same_document(monkeypatch):
     store = MemoryStore()
-    monkeypatch.setattr(routes, "get_store", lambda: store)
+    monkeypatch.setattr(routes, "get_store", lambda uid: store)
     monkeypatch.setattr(routes, "get_llm", MockProvider)
     original = routes.pipeline.analyze
     def overloaded(*args, **kwargs):
