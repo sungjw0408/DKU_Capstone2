@@ -6,9 +6,7 @@ import { Ionicons } from "@expo/vector-icons";
 import Card from "../components/Card";
 import Badge from "../components/Badge";
 import ProgressBar from "../components/ProgressBar";
-import PrimaryButton from "../components/PrimaryButton";
 import DocumentEditModal from "../components/DocumentEditModal";
-import AccountSidebar from "../components/AccountSidebar";
 import { colors, spacing, type, radius } from "../theme/theme";
 import { listDocuments, getDocument, listTodos, updateTodo, updateDocument, deleteDocument, } from "../services/api";
 import { localPlanDate } from "../utils/preparationPlan";
@@ -34,7 +32,6 @@ export default function HomeScreen({ navigation }) {
   const [selectedDocument, setSelectedDocument] = useState(null);
   const [editingDocument, setEditingDocument] = useState(null);
   const [deletingId, setDeletingId] = useState(null);
-  const [menuOpen, setMenuOpen] = useState(false);
 
   useFocusEffect(useCallback(() => {
     let active = true;
@@ -261,16 +258,8 @@ export default function HomeScreen({ navigation }) {
           <Text style={styles.brand}>똑독</Text>
         </View>
         <View style={styles.headerIcons}>
-          <Pressable hitSlop={8} accessibilityRole="button" accessibilityLabel="캘린더"
-            onPress={() => navigation.navigate("Calendar")}>
-            <Ionicons name="calendar-outline" size={22} color={colors.ink} />
-          </Pressable>
           <Pressable hitSlop={8}>
             <Ionicons name="notifications-outline" size={22} color={colors.ink} />
-          </Pressable>
-          <Pressable hitSlop={8} accessibilityRole="button" accessibilityLabel="메뉴 열기"
-            accessibilityState={{ expanded: menuOpen }} aria-expanded={menuOpen} onPress={() => setMenuOpen(true)}>
-            <Ionicons name="menu-outline" size={22} color={colors.ink} />
           </Pressable>
         </View>
       </View>
@@ -435,14 +424,6 @@ export default function HomeScreen({ navigation }) {
         />
       )}
 
-      <View style={styles.bottomBar}>
-        <PrimaryButton
-          label="+ 문서 추가하기"
-          tone="stamp"
-          onPress={() => navigation.navigate("DocumentAdd")}
-        />
-      </View>
-      <AccountSidebar visible={menuOpen} onClose={() => setMenuOpen(false)} />
     </SafeAreaView>
   );
 }
@@ -481,7 +462,7 @@ const styles = StyleSheet.create({
   justifyContent: "center",
 },
   brand: { ...type.h1 },
-  container: { padding: spacing.lg, paddingBottom: 100 },
+  container: { padding: spacing.lg, paddingBottom: spacing.xxl },
 
   tabRow: { flexDirection: "row", gap: spacing.sm, marginBottom: spacing.lg },
   tab: {

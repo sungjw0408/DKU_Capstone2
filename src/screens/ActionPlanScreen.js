@@ -12,6 +12,7 @@ import { getDocument, savePlan, registerPlan } from "../services/api";
 import { createDocumentPlan, formatStepDate, formatDeadline, formatDuration, getDday, sortPlanSteps } from "../utils/preparationPlan";
 import { ddayTone, DDAY_COLORS } from "../utils/dday";
 import { daysUntil } from "../utils/todoManagement";
+import { backOrHome } from "../navigation/routes";
 
 // 첨부 화면의 색상은 이 화면에만 적용하고 앱 공통 디자인 토큰은 유지한다.
 const planColors = {
@@ -60,7 +61,7 @@ export default function ActionPlanScreen({ navigation, route }) {
         <Text style={[type.body, { marginVertical: spacing.lg }]}>{error || "저장된 준비 계획을 불러오는 중…"}</Text>
         {!!error && <PrimaryButton label="다시 불러오기" onPress={() => setReload((prev) => prev + 1)} />}
         <Pressable accessibilityRole="button" accessibilityLabel="뒤로가기" style={styles.backButton}
-          onPress={() => navigation.canGoBack() ? navigation.goBack() : navigation.replace("Home")}>
+          onPress={() => backOrHome(navigation)}>
           <Ionicons name="chevron-back" size={24} color={planColors.ink} />
         </Pressable>
       </View>
@@ -127,7 +128,7 @@ function ActionPlanContent({ navigation, plan, onReload }) {
   return (
     <SafeAreaView style={styles.safe} edges={["top", "bottom"]}>
       <View style={styles.backRow}>
-        <Pressable accessibilityRole="button" accessibilityLabel="뒤로가기" disabled={saving} hitSlop={8} onPress={() => navigation.canGoBack() ? navigation.goBack() : navigation.replace("Home")} style={styles.backButton}>
+        <Pressable accessibilityRole="button" accessibilityLabel="뒤로가기" disabled={saving} hitSlop={8} onPress={() => backOrHome(navigation)} style={styles.backButton}>
           <Ionicons name="chevron-back" size={24} color={planColors.ink} />
         </Pressable>
       </View>

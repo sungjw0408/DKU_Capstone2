@@ -13,6 +13,7 @@ import { daysUntil, googleCalendarUrl, isOverdue, nextTodo, splitDeadline } from
 import { ddayTone, DDAY_COLORS } from "../utils/dday";
 import TodoEditModal from "../components/TodoEditModal";
 import DocumentEditModal from "../components/DocumentEditModal";
+import { resetToHome } from "../navigation/routes";
 
 
 // 주소 열기: 웹은 새 탭으로, 폰은 캘린더 앱(또는 브라우저)으로
@@ -44,9 +45,8 @@ export default function ManagementScreen({ navigation, route }) {
   const [showDocumentMenu, setShowDocumentMenu] = useState(false);
   const [editingDocument, setEditingDocument] = useState(null);
   
-  const goHome = useCallback(() => {
-    navigation.reset({ index: 0, routes: [{ name: "Home" }] });
-  }, [navigation]);
+  // 탭 구조: 쌓인 화면을 걷어내고 홈 탭으로 (routes.js)
+  const goHome = useCallback(() => resetToHome(navigation), [navigation]);
 
   useLayoutEffect(() => {
     navigation.setOptions({
