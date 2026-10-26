@@ -1,5 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
-import { confirmAccountIdentity, createAccount, currentAuthUser, leaveAccount, loginAccount, loginGoogleAccount, loginGuestAccount, observeAuth } from "../services/auth";
+import { confirmAccountIdentity, createAccount, currentAuthUser, leaveAccount, linkGuestGoogleAccount, loginAccount, loginGoogleAccount, loginGuestAccount, observeAuth, usesGoogleAccount } from "../services/auth";
 import { deleteOwnAccount, ensureGuestProfile, getProfileState, saveProfile } from "../services/profileApi";
 import { registerWithProfile } from "../utils/accountFlow";
 import { authErrorMessage } from "../utils/authForm";
@@ -113,6 +113,29 @@ export function AuthProvider({ children }) {
     }
   });
 
+  const upgradeGuestToGoogle = () => run(async () => {
+    const guest = currentAuthUser();
+    if (!guest?.isAnonymous) throw new Error("게스트로 이용 중일 때 Google 계정을 연결할 수 있어요.");
+    if (session.pendingDeletion) throw new Error("데이터 삭제가 진행 중이에요. 삭제를 먼저 마무리해 주세요.");
+    const guestUid = guest.uid;
+    try {
+      // 팝업을 클릭 직후 열고, 같은 UID에 갱신된 인증 정보로 프로필을 조회한다.
+      const user = await linkGuestGoogleAccount(guest);
+      await user.getIdToken(true);
+      setSession(profileSession(user, await getProfileState(user)));
+    } catch (error) {
+      const user = currentAuthUser();
+      if (user?.uid === guestUid && usesGoogleAccount(user)) {
+        // 연결 후 조회 실패는 연결을 되돌리지 않는다. 같은 계정으로 소속 저장을 재시도한다.
+        setSession({ ...initial, user, profile: session.profile, loading: false,
+          error: "Google 계정 연결은 완료됐지만 소속 정보를 확인하지 못했어요. 연결을 확인한 뒤 다시 조회하거나 소속을 저장해 주세요." });
+        return;
+      }
+      // 취소·이미 가입된 Google 계정은 현재 게스트와 데이터를 그대로 유지한다.
+      throw error;
+    }
+  });
+
   const register = (email, password, selection) => run(async () => {
     const result = await registerWithProfile({ createAccount, saveProfile }, { email, password, selection });
     setSession({ ...initial, user: result.user, profile: result.profile, loading: false,
@@ -148,7 +171,7 @@ export function AuthProvider({ children }) {
     setSession({ ...initial, loading: false });
   });
 
-  return <AuthContext.Provider value={{ ...session, busy, login, loginGoogle, loginGuest, register, completeProfile, backToLogin, logout: backToLogin, deleteAccount,
+  return <AuthContext.Provider value={{ ...session, busy, login, loginGoogle, loginGuest, upgradeGuestToGoogle, register, completeProfile, backToLogin, logout: backToLogin, deleteAccount,
     retryProfile: () => restore(currentAuthUser()) }}>{children}</AuthContext.Provider>;
 }
 

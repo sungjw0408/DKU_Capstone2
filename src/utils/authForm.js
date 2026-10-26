@@ -25,6 +25,7 @@ export function authErrorMessage(error) {
     "auth/unauthorized-domain": "현재 앱 주소에서 로그인을 사용할 수 없어요. Firebase 허용 도메인을 확인해 주세요.",
     "auth/popup-blocked": "Google 로그인 창이 차단됐어요. 브라우저에서 팝업을 허용하고 다시 눌러 주세요.",
     "auth/account-exists-with-different-credential": "같은 이메일로 가입한 계정이 있어요. 기존 로그인 방식을 이용해 주세요.",
+    "auth/guest-google-account-in-use": "이미 가입된 Google 계정이에요. 게스트 데이터는 그대로 유지돼요. 다른 Google 계정을 선택해 주세요.",
     "auth/user-mismatch": "현재 로그인한 Google 계정을 선택해 주세요.",
     "auth/requires-recent-login": "본인 확인 시간이 지났어요. 다시 확인해 주세요.",
     "auth/invalid-oauth-client-id": "Google 로그인 설정을 확인해 주세요.",

@@ -12,8 +12,10 @@ export default function AuthGate() {
   const { loading, user, profile, pendingDeletion } = useAuth();
   if (loading) return <AuthLoading />;
   if (user && pendingDeletion) return <AccountDeletionScreen />;
-  if (user?.isAnonymous && !profile) return <GuestSetupScreen />;
-  if (user) return profile ? <AppNavigator /> : <CompleteProfileScreen />;
+  if (user?.isAnonymous) return profile ? <AppNavigator /> : <GuestSetupScreen />;
+  // Google 연결 직후 남아 있는 게스트 프로필은 소속 저장이 끝난 회원 프로필이 아니다.
+  const hasMemberProfile = profile?.accountType !== "guest" && !!profile?.collegeId && !!profile?.departmentId;
+  if (user) return hasMemberProfile ? <AppNavigator /> : <CompleteProfileScreen />;
   return <NavigationContainer>
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       <Stack.Screen name="Login" component={LoginScreen} />

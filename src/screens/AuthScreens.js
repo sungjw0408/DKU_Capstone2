@@ -1,10 +1,11 @@
 import React, { useState } from "react";
-import { Image, Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { AuthError, AuthInput, AuthLink, AuthScaffold } from "../components/AuthFields";
 import AffiliationPicker from "../components/AffiliationPicker";
 import PrimaryButton from "../components/PrimaryButton";
 import AccountDeletionForm from "../components/AccountDeletionForm";
+import GoogleAccountButton from "../components/GoogleAccountButton";
 import { useAuth } from "../contexts/AuthContext";
 import useAffiliations from "../hooks/useAffiliations";
 import { googleSignInAvailable } from "../services/auth";
@@ -69,13 +70,9 @@ export function LoginScreen({ navigation }) {
     <AuthError message={error || sessionError} />
     <PrimaryButton label={busy && !guestStarting && !googleStarting ? "로그인 중…" : "로그인"} tone="stamp" onPress={submit} disabled={busy} />
     <AuthLink label="처음이신가요? 회원가입" disabled={busy} onPress={() => navigation.navigate("SignUp")} />
-    <Pressable accessibilityRole="button" accessibilityLabel="Google 계정으로 시작하기"
+    <GoogleAccountButton label={googleStarting ? "Google 로그인 중…" : "Google 계정으로 시작하기"}
       accessibilityHint={googleSignInAvailable ? undefined : "Google 로그인은 현재 웹에서 이용할 수 있어요."}
-      accessibilityState={{ disabled: busy || !googleSignInAvailable }} disabled={busy || !googleSignInAvailable}
-      onPress={startGoogle} style={({ pressed }) => [styles.googleButton, { opacity: busy || !googleSignInAvailable ? 0.5 : pressed ? 0.7 : 1 }]}>
-      <Image source={require("../../assets/google-g.png")} style={styles.googleLogo} resizeMode="contain" accessible={false} />
-      <Text style={styles.googleLabel}>{googleStarting ? "Google 로그인 중…" : "Google 계정으로 시작하기"}</Text>
-    </Pressable>
+      disabled={busy || !googleSignInAvailable} onPress={startGoogle} />
     <View style={styles.guestSection}>
       <AuthLink label={guestStarting ? "게스트로 시작하는 중…" : "게스트로 시작하기"} disabled={busy} onPress={startGuest} />
     </View>
@@ -110,7 +107,7 @@ export function SignUpScreen({ navigation }) {
 }
 
 export function CompleteProfileScreen() {
-  const { user, draftSelection, completeProfile, backToLogin, retryProfile, busy, error: sessionError } = useAuth();
+  const { user, profile, draftSelection, completeProfile, backToLogin, retryProfile, busy, error: sessionError } = useAuth();
   const catalogState = useAffiliations();
   const [selection, setSelection] = useState(draftSelection);
   const [error, setError] = useState("");
@@ -122,7 +119,10 @@ export function CompleteProfileScreen() {
     setError("");
     try { await completeProfile(selection); } catch (failure) { setError(authErrorMessage(failure)); }
   };
-  return <AuthScaffold title="소속 정보 확인" subtitle={`${user?.email || "계정"}의 소속 정보를 저장하면 홈 화면으로 이동해요.`}>
+  const upgradedGuest = !user?.isAnonymous && profile?.accountType === "guest";
+  return <AuthScaffold title="소속 정보 확인" subtitle={upgradedGuest
+    ? `${user?.email || "Google 계정"}에 연결했어요. 기존 문서와 일정을 유지한 채 소속 정보를 저장해 주세요.`
+    : `${user?.email || "계정"}의 소속 정보를 저장하면 홈 화면으로 이동해요.`}>
     <AuthError message={error || sessionError} />
     {!!sessionError && <AuthLink label="저장된 소속 정보 다시 확인" onPress={retryProfile} disabled={busy} />}
     <AffiliationField catalogState={catalogState} selection={selection} setSelection={setSelection} disabled={busy} />
@@ -135,9 +135,6 @@ export function CompleteProfileScreen() {
 
 const styles = StyleSheet.create({
   selection: { flexDirection: "row", alignItems: "center", gap: spacing.sm, borderWidth: 1, borderColor: colors.line, borderRadius: radius.md, padding: spacing.lg, backgroundColor: colors.paper, minHeight: 54 },
-  googleButton: { alignSelf: "center", flexDirection: "row", alignItems: "center", justifyContent: "center", gap: spacing.sm, minHeight: 40, paddingHorizontal: spacing.lg, paddingVertical: spacing.sm, borderRadius: radius.md, backgroundColor: colors.surface },
-  googleLogo: { width: 18, height: 18 },
-  googleLabel: { fontSize: 13, fontWeight: "500", color: "#1F1F1F" },
   guestSection: { borderTopWidth: 1, borderTopColor: colors.line, paddingTop: spacing.md, gap: spacing.xs },
 });
 

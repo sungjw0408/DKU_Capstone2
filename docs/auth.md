@@ -32,7 +32,7 @@ Firebase Authentication이 이메일/비밀번호 계정을 관리한다. 비밀
 - 개인 문서·일정은 Google 로그인으로 발급받은 동일한 Firebase UID 아래에 저장한다. 기존 토큰 검증과 사용자별 보안 규칙을 그대로 사용한다.
 - 프로필 조회나 저장이 실패해도 Google 계정을 다시 만들지 않고 기존 소속 저장·재조회 화면에서 복구한다. 같은 이메일의 다른 인증 방식과 충돌하면 기존 방식으로 로그인하도록 안내하며 데이터를 임의로 합치지 않는다.
 - Google 계정이 연결된 회원은 탈퇴할 때 Google 팝업으로 다시 본인 확인한다. 다른 Google 계정을 선택하면 Firebase가 거부하며, 확인 성공 후 갱신된 ID 토큰으로 기존 탈퇴 API를 호출한다. 서버의 최근 5분 재인증 요구를 유지한다.
-- 이메일·비밀번호 회원과 게스트의 기존 로그인·탈퇴 처리는 유지한다. 게스트에서 Google 계정으로 데이터와 함께 전환하는 기능은 이번 범위에 포함하지 않았다.
+- 이메일·비밀번호 회원과 게스트의 기존 로그인·탈퇴 처리는 유지한다. 게스트의 Google 계정 전환은 아래 별도 흐름으로 처리한다.
 - Android/iOS에는 웹 전용 팝업 코드를 포함하지 않도록 플랫폼 파일을 분리했다. 모바일 Google 버튼은 비활성이며 이메일·게스트는 계속 사용할 수 있다. 모바일 Google 인증은 앱별 OAuth 등록과 개발 빌드를 갖춘 뒤 별도 구현한다.
 
 참고: [Firebase Google 로그인](https://firebase.google.com/docs/auth/web/google-signin), [Expo 모바일 Google 인증](https://docs.expo.dev/guides/google-authentication/).
@@ -51,6 +51,31 @@ Firebase Authentication이 이메일/비밀번호 계정을 관리한다. 비밀
 Google 연동 시 개발 도구로는 수정한 프런트 7개 파일과 백엔드 1개 파일의 문법만 확인했다. 아래에 기록한 기존 테스트 통과 수는 Google 연동을 검증한 결과가 아니다. 사용자는 Firebase의 Google 활성화를 완료하고, Google 버튼으로 계정을 생성해 로그인했다고 확인했다. Google 비밀번호는 앱의 이메일·비밀번호 로그인용 비밀번호로 자동 등록되지 않으며, 이후에도 Google 버튼으로 로그인한다. Google 계정 탈퇴 등 나머지 실제 기능 확인은 사용자가 직접 진행한다.
 
 직접 확인 순서: Google 활성화 → 앱 로그인 화면의 Google 버튼 → 준비한 테스트 계정 선택 → 최초 소속 저장 → 홈 → 로그아웃 후 같은 Google 계정으로 재로그인 → 본인 데이터 유지 확인. 삭제해도 되는 계정에 한해 Google 본인 확인 후 탈퇴도 확인할 수 있다.
+
+## 게스트 → Google 계정 연결 — 웹
+
+2026-10-22 게스트 메뉴에 **Google 계정으로 전환**을 추가했다. 로그인 화면의 Google 버튼을 공통 컴포넌트로 분리해 기존 로고·크기·테두리 없는 디자인을 재사용한다. 기존 Firebase SDK를 사용하므로 추가 설치나 Firebase 설정 변경은 필요하지 않다.
+
+- `linkWithPopup`으로 현재 게스트 계정에 Google 로그인 수단을 연결한다. `signInWithPopup`으로 다른 계정에 로그인하는 흐름을 사용하지 않는다. Firebase UID가 유지되므로 `users/{uid}` 아래의 문서·원문·분석·일정과 UID별 서버 원본은 복사하거나 삭제하지 않는다.
+- 연결 후 ID 토큰을 갱신하고 본인 프로필을 조회한다. 기존 게스트 프로필은 소속 선택 화면으로 이동하며, 기존 프로필 API로 단과대·학과를 저장하면 같은 UID의 `accountType`이 `member`로 바뀐다. 문서·일정 하위 컬렉션은 유지한다.
+- 소속 선택 전에 새로고침하거나 로그아웃해도 이후 Google 로그인으로 같은 UID를 복원하고 소속 선택을 이어갈 수 있다. Google 연결 성공 후 프로필 조회가 실패해도 연결된 계정을 유지하고 소속 재조회·저장을 제공한다.
+- 팝업 취소 시 게스트를 유지한다. 이미 다른 Firebase UID에 가입된 Google 계정을 선택하면 연결을 거부하고 다른 계정을 선택하도록 안내한다. 기존 회원과 게스트의 데이터를 임의로 합치거나 기존 계정으로 자동 로그인하지 않는다.
+- 연결 중에는 메뉴 닫기·로그아웃·삭제·중복 연결 버튼을 비활성화한다. 삭제 진행 상태에서는 연결을 시작할 수 없다. 연결을 완료한 계정의 탈퇴에는 기존 Google 재인증을 사용한다.
+- 현재 웹에서만 제공한다. Android/iOS의 이메일·게스트 기능은 유지하고 모바일 Google 연결은 별도 구현 범위로 둔다.
+
+변경 파일: `src/components/GoogleAccountButton.js`, `src/components/AccountSidebar.js`, `src/screens/AuthScreens.js`, `src/contexts/AuthContext.js`, `src/navigation/AuthGate.js`, `src/services/auth.js`, `src/services/googleAuth.web.js`, `src/services/googleAuth.native.js`, `src/utils/authForm.js`, `docs/auth.md`. 백엔드·DB 경로·보안 규칙은 변경하지 않는다.
+
+검증 범위: JavaScript/JSX 문법과 변경 diff를 정적으로 확인한다. 사용자 요청에 따라 실제 계정 생성·연결·삭제, 브라우저 로그인 조작, 자동 테스트 및 번들 빌드는 실행하지 않는다. JavaScript 프로젝트로 별도 TypeScript 검사 설정은 없다.
+
+사용자 확인 순서:
+
+1. 게스트로 로그인해 문서와 일정을 등록한 뒤 메뉴 → Google 계정으로 전환을 누른다.
+2. 이 앱에 아직 가입하지 않은 Google 계정을 선택하고 소속을 저장한다. 홈에서 이전 문서·일정·완료 상태가 그대로인지 확인한다. Firebase Auth의 UID와 `users/{uid}` 경로도 연결 전후 같아야 한다.
+3. 로그아웃 후 같은 Google 계정으로 로그인해 본인 데이터가 유지되는지 확인한다.
+4. 다른 게스트에서 팝업 취소 및 이미 가입된 Google 계정 선택 시 기존 게스트와 문서·일정이 유지되는지 확인한다.
+5. 새 게스트를 연결한 뒤 소속 저장 전에 새로고침해 소속 선택으로 돌아오는지 확인한다. 프로필 조회 실패 시 같은 Google 계정에서 다시 조회·저장할 수 있는지도 확인한다.
+
+참고: [Firebase 계정 연결](https://firebase.google.com/docs/auth/web/account-linking), [익명 계정 업그레이드](https://firebase.google.com/docs/auth/web/anonymous-auth#convert-an-anonymous-account-to-a-permanent-account).
 
 ## 게스트로 시작하기
 
@@ -122,7 +147,7 @@ Google 연동 시 개발 도구로는 수정한 프런트 7개 파일과 백엔�
 1. A에서 문서 등록 후 B로 로그인하면 A의 문서·일정이 보이지 않는지 확인한다.
 2. 다시 A로 로그인하면 본인 문서·일정·원문이 유지되는지 확인한다.
 3. 삭제해도 되는 계정으로 메뉴 → 회원 탈퇴 → 비밀번호 확인을 진행하고 로그인 화면 이동 및 해당 Auth 계정·DB 하위 데이터 삭제를 확인한다. 실제 화면의 최종 탈퇴 버튼은 개발 도구로 실행하지 않았다.
-4. Firebase 콘솔 규칙 시뮬레이터에서 다른 UID의 `users/{uid}` 문서 읽기가 거부되는지 확인한다. 실제 REST 차단은 확인했지만 콘솔 시뮬레이터 검증은 아직 수행하지 않았다.
+4. Firebase 콘솔 규칙 시뮬레이터는 2026-10-22 사용자의 별도 검증 요청으로 확인했다. 본인 문서·원문·일정 읽기 허용, 타인·비로그인 읽기 거부, 본인 문서 생성·수정·삭제 거부, 기존 루트 문서 읽기 거부의 9개 항목을 통과했다. 실제 계정·DB 데이터·보안 규칙은 변경하지 않았다.
 5. 실제 모바일 기기의 로그인 유지와 화면 표시를 확인한다.
 6. 로그인 화면에서 게스트로 시작하기 → 소속 선택 없이 홈 진입 → 문서 등록 → 새로고침 후 본인 데이터 유지 → 메뉴의 로그아웃 확인·취소와 게스트 데이터 삭제를 확인한다. 새 게스트와 이메일 계정 사이에 문서·일정이 섞이지 않는지도 확인한다.
 
@@ -144,4 +169,4 @@ Google 연동 시 개발 도구로는 수정한 프런트 7개 파일과 백엔�
 - 테스트: `tests/auth.test.mjs`, `tests/authenticatedApi.test.mjs`, `backend/tests/test_profiles.py`, `test_user_security.py`, `conftest.py`, `test_persistence.py`.
 - 의존성: `package.json`, `package-lock.json`에는 앞선 로그인 유지 구현의 AsyncStorage 2.2.0이 추가되어 있다. 이번 사용자별 저장·탈퇴 구현에는 새 라이브러리를 추가하지 않았다.
 
-작업 브랜치는 `feature/auth-email-login`이다. 2026-10-22 사용자가 현재까지의 작업을 커밋하고 push하도록 요청했다. 이번 요청에는 PR 생성·merge가 포함되지 않는다.
+작업 브랜치는 `feature/auth-email-login`이다. 기존 로그인·사용자별 데이터 관리 작업은 사용자 요청으로 커밋·push했다. 이번 게스트 → Google 연결 변경은 별도 요청 전까지 add·커밋·push하지 않는다.

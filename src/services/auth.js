@@ -2,7 +2,7 @@ import { createUserWithEmailAndPassword, EmailAuthProvider, onAuthStateChanged, 
 import { auth } from "./firebaseAuth";
 import { confirmGoogleAccount } from "./googleAuth";
 
-export { googleSignInAvailable, loginGoogleAccount } from "./googleAuth";
+export { googleSignInAvailable, linkGuestGoogleAccount, loginGoogleAccount } from "./googleAuth";
 
 export const observeAuth = (next, error) => onAuthStateChanged(auth, next, error);
 export const currentAuthUser = () => auth.currentUser;
