@@ -9,6 +9,9 @@ import AIAnalysisScreen from "../screens/AIAnalysisScreen";
 import EvidenceCheckScreen from "../screens/EvidenceCheckScreen";
 import ActionPlanScreen from "../screens/ActionPlanScreen";
 import ManagementScreen from "../screens/ManagementScreen";
+import CalendarScreen from "../screens/CalendarScreen";
+import TodosScreen from "../screens/TodosScreen";
+import SettingsScreen from "../screens/SettingsScreen";
 
 const Stack = createNativeStackNavigator();
 
@@ -20,12 +23,6 @@ const screenOptions = {
   contentStyle: { backgroundColor: colors.paper },
 };
 
-// 구조
-// 루트 Stack
-//  ├─ Tabs (하단 탭: 홈 / 캘린더 / ➕ / 할 일 / 설정)
-//  └─ 문서 추가 → AI 분석 → 원문 근거 → 준비 계획 → 등록 후 관리
-//     이어지는 화면은 탭 위에 쌓이고, 쌓인 동안에는 탭 바가 가려진다.
-//     뒤로 가면 출발했던 탭으로 돌아간다.
 export default function AppNavigator() {
   return (
     <NavigationContainer>
@@ -39,6 +36,9 @@ export default function AppNavigator() {
         <Stack.Screen name="EvidenceCheck" component={EvidenceCheckScreen} options={{ headerShown: false }} />
         <Stack.Screen name="ActionPlan" component={ActionPlanScreen} options={{ headerShown: false }} />
         <Stack.Screen name="Management" component={ManagementScreen} options={{ title: "등록 후 관리" }} />
+        <Stack.Screen name="Calendar" component={CalendarScreen} options={{ title: "캘린더" }} />
+        <Stack.Screen name="Todos" component={TodosScreen} options={{ headerShown: false }} />
+        <Stack.Screen name="Settings" component={SettingsScreen} options={{ headerShown: false }} />
       </Stack.Navigator>
     </NavigationContainer>
   );

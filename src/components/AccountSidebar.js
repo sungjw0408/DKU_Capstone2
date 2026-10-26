@@ -4,17 +4,20 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import PrimaryButton from "./PrimaryButton";
 import AccountDeletionForm from "./AccountDeletionForm";
+import GoogleAccountButton from "./GoogleAccountButton";
 import { useAuth } from "../contexts/AuthContext";
+import { googleSignInAvailable } from "../services/auth";
 import { authErrorMessage } from "../utils/authForm";
 import { colors, spacing, type } from "../theme/theme";
 
-export default function AccountSidebar({ visible, onClose }) {
-  const { logout, busy, user } = useAuth();
+export default function AccountSidebar({ visible, onClose, onNavigate }) {
+  const { logout, upgradeGuestToGoogle, busy, user } = useAuth();
   const guest = !!user?.isAnonymous;
   const [mounted, setMounted] = useState(visible);
   const [error, setError] = useState("");
   const [deleting, setDeleting] = useState(false);
   const [confirmGuestLogout, setConfirmGuestLogout] = useState(false);
+  const [googleLinking, setGoogleLinking] = useState(false);
   const progress = useRef(new Animated.Value(0)).current;
   const { width } = useWindowDimensions();
   const panelWidth = Math.min(width * 0.84, 320);
@@ -47,6 +50,14 @@ export default function AccountSidebar({ visible, onClose }) {
     try { await logout(); }
     catch (failure) { setError(authErrorMessage(failure)); }
   };
+  const handleGoogleLink = async () => {
+    if (busy) return;
+    setError("");
+    setGoogleLinking(true);
+    try { await upgradeGuestToGoogle(); onClose(); }
+    catch (failure) { setError(authErrorMessage(failure)); }
+    finally { setGoogleLinking(false); }
+  };
 
   return <Modal visible={mounted} transparent animationType="none" statusBarTranslucent onRequestClose={close}>
     <View style={styles.overlay}>
@@ -74,15 +85,32 @@ export default function AccountSidebar({ visible, onClose }) {
             <Pressable accessibilityRole="button" disabled={busy} onPress={() => { setConfirmGuestLogout(false); setError(""); }} style={{ alignItems: "center", padding: spacing.sm }}>
               <Text style={[type.bodyStrong, { color: colors.stamp }]}>취소</Text>
             </Pressable>
-          </ScrollView> : <><View style={styles.body}>
+          </ScrollView> : <><ScrollView style={styles.body} contentContainerStyle={{ gap: spacing.lg, paddingBottom: spacing.xl }}>
+            {!!onNavigate && <View>
+              {[{ screen: "Todos", label: "할 일", icon: "checkbox-outline" },
+                { screen: "Settings", label: "설정", icon: "settings-outline" }].map((item) => (
+                <Pressable key={item.screen} accessibilityRole="button" accessibilityLabel={`${item.label} 열기`}
+                  disabled={busy} onPress={() => onNavigate(item.screen)} style={styles.navigationItem}>
+                  <Ionicons name={item.icon} size={20} color={colors.ink} />
+                  <Text style={[type.bodyStrong, { flex: 1 }]}>{item.label}</Text>
+                  <Ionicons name="chevron-forward" size={16} color={colors.muted} />
+                </Pressable>
+              ))}
+            </View>}
             {guest && <View style={{ gap: spacing.sm }}>
               <Text style={type.bodyStrong}>게스트로 이용 중</Text>
               <Text style={[type.small, { color: colors.muted }]}>현재 기기의 로그인 상태가 유지되는 동안 내 문서와 일정을 사용할 수 있어요.</Text>
             </View>}
-          </View>
+            {guest && googleSignInAvailable && <View style={styles.googleSection}>
+              <Text style={type.bodyStrong}>계정에 연결하기</Text>
+              <Text style={[type.small, { color: colors.muted }]}>Google 계정을 연결하면 지금의 문서와 일정을 유지하고 다른 기기에서도 이용할 수 있어요.</Text>
+              <GoogleAccountButton label={googleLinking ? "Google 계정 연결 중…" : "Google 계정으로 전환"}
+                disabled={busy} onPress={handleGoogleLink} />
+            </View>}
+          </ScrollView>
           <View style={styles.footer}>
             {!!error && <Text accessibilityRole="alert" style={styles.error}>{error}</Text>}
-            <PrimaryButton label={busy ? "로그아웃 중…" : "로그아웃"} disabled={busy} onPress={guest ? () => setConfirmGuestLogout(true) : handleLogout} />
+            <PrimaryButton label={busy && !googleLinking ? "로그아웃 중…" : "로그아웃"} disabled={busy} onPress={guest ? () => setConfirmGuestLogout(true) : handleLogout} />
             <Pressable accessibilityRole="button" disabled={busy} onPress={() => { setError(""); setDeleting(true); }} style={{ alignItems: "center", padding: spacing.sm }}>
               <Text style={[type.bodyStrong, { color: colors.alert }]}>{guest ? "게스트 데이터 삭제" : "회원 탈퇴"}</Text>
             </Pressable>
@@ -102,6 +130,8 @@ const styles = StyleSheet.create({
   header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", padding: spacing.lg, borderBottomWidth: 1, borderBottomColor: colors.line },
   close: { padding: spacing.xs },
   body: { flex: 1, padding: spacing.xl },
+  navigationItem: { flexDirection: "row", alignItems: "center", gap: spacing.md, minHeight: 48, paddingVertical: spacing.sm },
+  googleSection: { gap: spacing.sm, paddingTop: spacing.lg, borderTopWidth: 1, borderTopColor: colors.line },
   footer: { padding: spacing.lg, borderTopWidth: 1, borderTopColor: colors.line, gap: spacing.md },
   error: { ...type.body, color: colors.alert },
 });

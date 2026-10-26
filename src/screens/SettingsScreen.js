@@ -8,10 +8,11 @@ import Badge from "../components/Badge";
 import PrimaryButton from "../components/PrimaryButton";
 import AccountDeletionForm from "../components/AccountDeletionForm";
 import { useAuth } from "../contexts/AuthContext";
+import { backOrHome } from "../navigation/routes";
 import { authErrorMessage } from "../utils/authForm";
 import { colors, spacing, type } from "../theme/theme";
 
-export default function SettingsScreen() {
+export default function SettingsScreen({ navigation }) {
   const { logout, busy, user } = useAuth();
   const guest = !!user?.isAnonymous;
   const [error, setError] = useState("");
@@ -26,7 +27,7 @@ export default function SettingsScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.safe} edges={["top"]}>
+    <SafeAreaView style={styles.safe} edges={["top", "bottom"]}>
       <View style={styles.header}>
         {deleting ? (
           <Pressable accessibilityRole="button" accessibilityLabel="설정으로 돌아가기" disabled={busy}
@@ -35,7 +36,13 @@ export default function SettingsScreen() {
             <Text style={type.display}>{guest ? "게스트 데이터 삭제" : "회원 탈퇴"}</Text>
           </Pressable>
         ) : (
-          <Text style={type.display}>설정</Text>
+          <View style={styles.back}>
+            <Pressable accessibilityRole="button" accessibilityLabel="뒤로가기" disabled={busy}
+              onPress={() => backOrHome(navigation)} hitSlop={8}>
+              <Ionicons name="chevron-back" size={22} color={colors.ink} />
+            </Pressable>
+            <Text style={type.display}>설정</Text>
+          </View>
         )}
       </View>
 

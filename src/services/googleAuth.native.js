@@ -6,4 +6,5 @@ function unavailable() {
 }
 
 export const loginGoogleAccount = unavailable;
+export const linkGuestGoogleAccount = unavailable;
 export const confirmGoogleAccount = unavailable;

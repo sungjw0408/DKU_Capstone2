@@ -8,6 +8,7 @@ import Card from "../components/Card";
 import { colors, spacing, type } from "../theme/theme";
 import { listTodos, updateTodo } from "../services/api";
 import { groupTodos, todoDateLabel } from "../utils/todoList";
+import { backOrHome } from "../navigation/routes";
 
 const SECTIONS = [
   ["overdue", "지난 할 일"],
@@ -94,9 +95,14 @@ export default function TodosScreen({ navigation }) {
   );
 
   return (
-    <SafeAreaView style={styles.safe} edges={["top"]}>
+    <SafeAreaView style={styles.safe} edges={["top", "bottom"]}>
       <View style={styles.header}>
-        <Text style={type.display}>할 일</Text>
+        <View style={styles.titleRow}>
+          <Pressable accessibilityRole="button" accessibilityLabel="뒤로가기" onPress={() => backOrHome(navigation)} hitSlop={8}>
+            <Ionicons name="chevron-back" size={22} color={colors.ink} />
+          </Pressable>
+          <Text style={type.display}>할 일</Text>
+        </View>
         <Text style={styles.summary}>{loading ? "불러오는 중…" : `남은 할 일 ${remaining}개`}</Text>
       </View>
 
@@ -146,6 +152,7 @@ export default function TodosScreen({ navigation }) {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.paper },
   header: { paddingHorizontal: spacing.lg, paddingTop: spacing.sm, paddingBottom: spacing.md, gap: 2 },
+  titleRow: { flexDirection: "row", alignItems: "center", gap: spacing.xs },
   summary: { ...type.bodyStrong, color: colors.muted },
   container: { padding: spacing.lg, paddingTop: 0, paddingBottom: spacing.xxl },
   errorBox: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: spacing.sm, marginBottom: spacing.md },
