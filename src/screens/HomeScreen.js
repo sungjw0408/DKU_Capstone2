@@ -1,12 +1,11 @@
-import React, { useCallback, useRef, useState } from "react";
-import { useFocusEffect } from "@react-navigation/native";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import { useFocusEffect, useScrollToTop } from "@react-navigation/native";
 import { View, Text, ScrollView, Pressable, StyleSheet, Modal, Alert, Platform } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import Card from "../components/Card";
 import Badge from "../components/Badge";
 import ProgressBar from "../components/ProgressBar";
-import BottomNavigation from "../components/BottomNavigation";
 import DocumentEditModal from "../components/DocumentEditModal";
 import AccountSidebar from "../components/AccountSidebar";
 import { colors, spacing, type, radius } from "../theme/theme";
@@ -25,6 +24,7 @@ export default function HomeScreen({ navigation, route }) {
   // 두 화면의 카드·문서 열기·수정·삭제 동작을 함께 유지한다.
   const isDocumentsScreen = route?.name === "Documents";
   const scroll = useRef(null);
+  useScrollToTop(scroll);
   const [tab, setTab] = useState("today");
   const [tasks, setTasks] = useState([]);
   const [documents, setDocuments] = useState([]);
@@ -38,6 +38,11 @@ export default function HomeScreen({ navigation, route }) {
   const [editingDocument, setEditingDocument] = useState(null);
   const [deletingId, setDeletingId] = useState(null);
   const [menuOpen, setMenuOpen] = useState(false);
+
+  useEffect(() => {
+    if (isDocumentsScreen) return;
+    return navigation.addListener("tabPress", () => setTab("today"));
+  }, [navigation, isDocumentsScreen]);
 
   useFocusEffect(useCallback(() => {
     let active = true;
@@ -447,17 +452,8 @@ export default function HomeScreen({ navigation, route }) {
         />
       )}
 
-      <BottomNavigation activeScreen={isDocumentsScreen ? "Documents" : "Home"}
-        onHome={() => {
-          if (isDocumentsScreen) navigation.navigate("Home");
-          else { setTab("today"); scroll.current?.scrollTo({ y: 0, animated: true }); }
-        }}
-        onAddDocument={() => navigation.navigate("DocumentAdd")}
-        onDocuments={() => {
-          if (isDocumentsScreen) scroll.current?.scrollTo({ y: 0, animated: true });
-          else navigation.navigate("Documents");
-        }} />
-      <AccountSidebar visible={menuOpen} onClose={() => setMenuOpen(false)} />
+      <AccountSidebar visible={menuOpen} onClose={() => setMenuOpen(false)}
+        onNavigate={(screen) => { setMenuOpen(false); navigation.navigate(screen); }} />
     </SafeAreaView>
   );
 }

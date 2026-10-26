@@ -20,6 +20,7 @@ import AuthenticatedPageImage from "../components/AuthenticatedPageImage";
 import { colors, spacing, radius } from "../theme/theme";
 import { analysisDetail as mockDetail, evidenceSource as mockSource } from "../data/mockData";
 import { confirmField, rejectField, getSource } from "../services/api";
+import { backOrHome } from "../navigation/routes";
 
 // ─────────────────────────── 화면 상수 ───────────────────────────
 const UI = {
@@ -360,7 +361,7 @@ export default function EvidenceCheckScreen({ navigation, route }) {
           accessibilityRole="button"
           accessibilityLabel="뒤로가기"
           hitSlop={8}
-          onPress={() => (navigation.canGoBack() ? navigation.goBack() : navigation.replace("Home"))}
+          onPress={() => (backOrHome(navigation))}
           style={styles.headerSide}
         >
           <Ionicons name="chevron-back" size={24} color={colors.ink} />
