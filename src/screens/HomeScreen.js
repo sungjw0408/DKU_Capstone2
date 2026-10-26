@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useRef, useState } from "react";
 import { useFocusEffect } from "@react-navigation/native";
 import { View, Text, ScrollView, Pressable, StyleSheet, Modal, Alert, Platform } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -6,7 +6,7 @@ import { Ionicons } from "@expo/vector-icons";
 import Card from "../components/Card";
 import Badge from "../components/Badge";
 import ProgressBar from "../components/ProgressBar";
-import PrimaryButton from "../components/PrimaryButton";
+import BottomNavigation from "../components/BottomNavigation";
 import DocumentEditModal from "../components/DocumentEditModal";
 import AccountSidebar from "../components/AccountSidebar";
 import { colors, spacing, type, radius } from "../theme/theme";
@@ -21,7 +21,10 @@ const todayLabel = () => {
   return `${now.getMonth() + 1}월 ${now.getDate()}일 (${days[now.getDay()]})`;
 };
 
-export default function HomeScreen({ navigation }) {
+export default function HomeScreen({ navigation, route }) {
+  // 두 화면의 카드·문서 열기·수정·삭제 동작을 함께 유지한다.
+  const isDocumentsScreen = route?.name === "Documents";
+  const scroll = useRef(null);
   const [tab, setTab] = useState("today");
   const [tasks, setTasks] = useState([]);
   const [documents, setDocuments] = useState([]);
@@ -40,14 +43,14 @@ export default function HomeScreen({ navigation }) {
     let active = true;
     setLoading(true);
     setError("");
-    Promise.all([listDocuments(), listTodos()]).then(([docs, todos]) => {
+    Promise.all([listDocuments(), isDocumentsScreen ? Promise.resolve([]) : listTodos()]).then(([docs, todos]) => {
       if (!active) return;
       setDocuments(docs);
       setTasks(todos.filter((item) => item.date === localPlanDate()));
     }).catch((e) => { if (active) setError(e.message); })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, [reload]));
+  }, [reload, isDocumentsScreen]));
 
   const toggleTask = async (item) => {
     if (busyTaskId) return;
@@ -183,8 +186,9 @@ export default function HomeScreen({ navigation }) {
 
   const sortedUpcoming = upcomingDocuments(documents, sortBy);
   const previewUpcoming = upcomingDocuments(documents).slice(0, 3);
-  const emptyLabel = loading ? "불러오는 중…" : error ? "문서를 불러오지 못했어요." : "다가오는 마감이 없습니다.";
-  const renderUpcomingCard = (list) => (
+  const emptyLabel = loading ? "불러오는 중…" : error ? "문서를 불러오지 못했어요."
+    : isDocumentsScreen ? "아직 추가한 문서가 없어요. 가운데 +를 눌러 문서를 추가해 주세요." : "다가오는 마감이 없습니다.";
+  const renderDocumentCard = (list) => (
     <Card>
       {list.length === 0 && (
         <Text style={type.small}>{emptyLabel}</Text>
@@ -217,7 +221,7 @@ export default function HomeScreen({ navigation }) {
 
               <Badge
                 label={ddayLabel(item.dday)}
-                tone={ddayTone(-item.dday)}
+                tone={ddayTone(item.dday == null ? null : -item.dday)}
               />
             </View>
 
@@ -275,10 +279,17 @@ export default function HomeScreen({ navigation }) {
         </View>
       </View>
 
-      <ScrollView contentContainerStyle={styles.container}>
+      <ScrollView ref={scroll} style={styles.scroll} contentContainerStyle={styles.container}>
         {!!error && <Text accessibilityRole="alert" style={[type.small, { color: colors.alert, marginBottom: spacing.md }]}>{error}</Text>}
         {!!error && <Pressable accessibilityRole="button" disabled={loading} onPress={() => setReload((prev) => prev + 1)}
           style={{ marginBottom: spacing.md }}><Text style={[type.bodyStrong, { color: colors.stamp }]}>다시 불러오기</Text></Pressable>}
+        {isDocumentsScreen ? <>
+          <View style={styles.sectionHeaderRow}>
+            <Text accessibilityRole="header" style={styles.sectionTitle}>내 문서</Text>
+            <Text style={type.small}>{loading ? "불러오는 중…" : `${documents.length}개`}</Text>
+          </View>
+          {renderDocumentCard(documents)}
+        </> : <>
         {/* 탭 버튼 */}
         <View style={styles.tabRow}>
           <Pressable
@@ -337,7 +348,7 @@ export default function HomeScreen({ navigation }) {
                 <Text style={styles.seeAll}>전체보기 ›</Text>
               </Pressable>
             </View>
-            {renderUpcomingCard(previewUpcoming)}
+            {renderDocumentCard(previewUpcoming)}
           </>
         ) : (
           <View style={{ marginBottom: spacing.xl }}>
@@ -353,9 +364,10 @@ export default function HomeScreen({ navigation }) {
               </Text>
             </Pressable>
 
-            {renderUpcomingCard(sortedUpcoming)}
+            {renderDocumentCard(sortedUpcoming)}
           </View>
         )}
+        </>}
 
       </ScrollView>
 
@@ -435,13 +447,16 @@ export default function HomeScreen({ navigation }) {
         />
       )}
 
-      <View style={styles.bottomBar}>
-        <PrimaryButton
-          label="+ 문서 추가하기"
-          tone="stamp"
-          onPress={() => navigation.navigate("DocumentAdd")}
-        />
-      </View>
+      <BottomNavigation activeScreen={isDocumentsScreen ? "Documents" : "Home"}
+        onHome={() => {
+          if (isDocumentsScreen) navigation.navigate("Home");
+          else { setTab("today"); scroll.current?.scrollTo({ y: 0, animated: true }); }
+        }}
+        onAddDocument={() => navigation.navigate("DocumentAdd")}
+        onDocuments={() => {
+          if (isDocumentsScreen) scroll.current?.scrollTo({ y: 0, animated: true });
+          else navigation.navigate("Documents");
+        }} />
       <AccountSidebar visible={menuOpen} onClose={() => setMenuOpen(false)} />
     </SafeAreaView>
   );
@@ -481,7 +496,8 @@ const styles = StyleSheet.create({
   justifyContent: "center",
 },
   brand: { ...type.h1 },
-  container: { padding: spacing.lg, paddingBottom: 100 },
+  scroll: { flex: 1 },
+  container: { padding: spacing.lg, paddingBottom: spacing.xl },
 
   tabRow: { flexDirection: "row", gap: spacing.sm, marginBottom: spacing.lg },
   tab: {
@@ -595,16 +611,5 @@ const styles = StyleSheet.create({
   },
   menuActionText: {
     ...type.bodyStrong,
-  },
-  
-  bottomBar: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    bottom: 0,
-    padding: spacing.lg,
-    backgroundColor: colors.paper,
-    borderTopWidth: 1,
-    borderTopColor: colors.line,
   },
 });
