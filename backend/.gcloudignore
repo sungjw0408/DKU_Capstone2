@@ -1,0 +1,24 @@
+
+# Google Cloud 업로드 제외 파일
+.gcloudignore
+.git/
+.gitignore
+
+# 기존 backend/.gitignore 규칙 적용
+#!include:.gitignore
+
+# 환경변수 및 인증 파일
+.env
+.env.*
+*serviceAccount*.json
+*firebase-adminsdk*.json
+firebasekey/
+
+# 로컬 Python 개발 환경
+/.venv/
+**/__pycache__/
+*.pyc
+.pytest_cache/
+
+# 로컬 실행 데이터
+/data/
