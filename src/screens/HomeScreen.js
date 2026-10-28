@@ -7,7 +7,6 @@ import Card from "../components/Card";
 import Badge from "../components/Badge";
 import ProgressBar from "../components/ProgressBar";
 import DocumentEditModal from "../components/DocumentEditModal";
-import AccountSidebar from "../components/AccountSidebar";
 import EmptyStart from "../components/EmptyStart";
 import { colors, spacing, type, radius } from "../theme/theme";
 import { listDocuments, getDocument, listTodos, updateTodo, updateDocument, deleteDocument, } from "../services/api";
@@ -39,7 +38,6 @@ export default function HomeScreen({ navigation, route }) {
   const [selectedDocument, setSelectedDocument] = useState(null);
   const [editingDocument, setEditingDocument] = useState(null);
   const [deletingId, setDeletingId] = useState(null);
-  const [menuOpen, setMenuOpen] = useState(false);
   // 내 문서: 제목 검색 + 상태 필터 (진행 중 / 마감 지남 / 완료)
   const [query, setQuery] = useState("");
   const [docFilter, setDocFilter] = useState("all");
@@ -283,17 +281,9 @@ export default function HomeScreen({ navigation, route }) {
           <Text style={styles.brand}>똑독</Text>
         </View>
         <View style={styles.headerIcons}>
-          <Pressable hitSlop={8} accessibilityRole="button" accessibilityLabel="캘린더"
-            onPress={() => navigation.navigate("Calendar")}>
-            <Ionicons name="calendar-outline" size={22} color={colors.ink} />
-          </Pressable>
           <Pressable hitSlop={8} accessibilityRole="button" accessibilityLabel="알림함"
             onPress={() => navigation.navigate("Notifications")}>
             <Ionicons name="notifications-outline" size={22} color={colors.ink} />
-          </Pressable>
-          <Pressable hitSlop={8} accessibilityRole="button" accessibilityLabel="메뉴 열기"
-            accessibilityState={{ expanded: menuOpen }} aria-expanded={menuOpen} onPress={() => setMenuOpen(true)}>
-            <Ionicons name="menu-outline" size={22} color={colors.ink} />
           </Pressable>
         </View>
       </View>
@@ -489,8 +479,6 @@ export default function HomeScreen({ navigation, route }) {
         />
       )}
 
-      <AccountSidebar visible={menuOpen} onClose={() => setMenuOpen(false)}
-        onNavigate={(screen) => { setMenuOpen(false); navigation.navigate(screen); }} />
     </SafeAreaView>
   );
 }

@@ -1,4 +1,4 @@
-// 설정 화면 (홈 오른쪽 위 메뉴 → 설정): 계정 / 알림 / 앱 정보
+// 설정 탭: 계정 / 알림 / 앱 정보
 // - 계정: components/settings/AccountSection.js (팀원 B가 채울 칸)
 // - 알림: 마감 알림 켜기·끄기, 알림 시각 고르기
 // - 앱 정보: 버전, 앱 소개 다시 보기
@@ -14,7 +14,6 @@ import PrimaryButton from "../components/PrimaryButton";
 import AccountDeletionForm from "../components/AccountDeletionForm";
 import AccountSection from "../components/settings/AccountSection";
 import { useAuth } from "../contexts/AuthContext";
-import { backOrHome } from "../navigation/routes";
 import { authErrorMessage } from "../utils/authForm";
 import { colors, radius, spacing, type } from "../theme/theme";
 import { REMINDER_HOURS, hourLabel } from "../utils/notificationPlan";
@@ -36,7 +35,7 @@ function noticeText(state, hour) {
   }
 }
 
-export default function SettingsScreen({ navigation }) {
+export default function SettingsScreen() {
   const { logout, busy, user } = useAuth();
   const guest = !!user?.isAnonymous;
   const [error, setError] = useState("");
@@ -83,7 +82,7 @@ export default function SettingsScreen({ navigation }) {
   const hourDisabled = notificationsSupported && !notice.enabled;
 
   return (
-    <SafeAreaView style={styles.safe} edges={["top", "bottom"]}>
+    <SafeAreaView style={styles.safe} edges={["top"]}>
       <View style={styles.header}>
         {deleting ? (
           <Pressable accessibilityRole="button" accessibilityLabel="설정으로 돌아가기" disabled={busy}
@@ -92,13 +91,7 @@ export default function SettingsScreen({ navigation }) {
             <Text style={type.display}>{guest ? "게스트 데이터 삭제" : "회원 탈퇴"}</Text>
           </Pressable>
         ) : (
-          <View style={styles.back}>
-            <Pressable accessibilityRole="button" accessibilityLabel="뒤로가기" disabled={busy}
-              onPress={() => backOrHome(navigation)} hitSlop={8}>
-              <Ionicons name="chevron-back" size={22} color={colors.ink} />
-            </Pressable>
-            <Text style={type.display}>설정</Text>
-          </View>
+          <Text style={type.display}>설정</Text>
         )}
       </View>
 

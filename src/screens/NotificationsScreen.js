@@ -61,7 +61,7 @@ export default function NotificationsScreen({ navigation }) {
     if (item.data?.documentId) {
       navigation.navigate("Management", { documentId: item.data.documentId, documentTitle: item.data.documentTitle });
     } else {
-      navigation.navigate("Todos");
+      navigation.navigate("Tabs", { screen: "Todos" });
     }
   };
 
@@ -80,7 +80,7 @@ export default function NotificationsScreen({ navigation }) {
               </Text>
             </View>
             {status === "off" && (
-              <Pressable accessibilityRole="button" onPress={() => navigation.navigate("Settings")} hitSlop={8}>
+              <Pressable accessibilityRole="button" onPress={() => navigation.navigate("Tabs", { screen: "Settings" })} hitSlop={8}>
                 <Text style={[type.bodyStrong, { color: colors.stamp }]}>설정</Text>
               </Pressable>
             )}
