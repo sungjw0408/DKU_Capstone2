@@ -1,14 +1,16 @@
-// 할 일 탭: 등록한 모든 문서의 준비 할 일을 날짜별로 모아 보고 바로 체크한다.
+// 할 일 탭: 위쪽에서 [할 일 | 문서]를 고른다.
+// - 할 일: 등록한 모든 문서의 준비 할 일을 날짜별로 모아 보고 바로 체크한다.
+// - 문서: 올린 문서 전체 목록 (검색·필터, DocumentListPanel)
 import React, { useCallback, useMemo, useState } from "react";
 import { useFocusEffect } from "@react-navigation/native";
 import { View, Text, ScrollView, Pressable, StyleSheet, ActivityIndicator } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import Card from "../components/Card";
+import DocumentListPanel from "../components/DocumentListPanel";
 import { colors, spacing, type } from "../theme/theme";
 import { listTodos, updateTodo } from "../services/api";
 import { groupTodos, todoDateLabel } from "../utils/todoList";
-import { backOrHome } from "../navigation/routes";
 
 const SECTIONS = [
   ["overdue", "지난 할 일"],
@@ -18,6 +20,7 @@ const SECTIONS = [
 ];
 
 export default function TodosScreen({ navigation }) {
+  const [view, setView] = useState("todos"); // "todos" | "documents"
   const [todos, setTodos] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -95,18 +98,23 @@ export default function TodosScreen({ navigation }) {
   );
 
   return (
-    <SafeAreaView style={styles.safe} edges={["top", "bottom"]}>
+    <SafeAreaView style={styles.safe} edges={["top"]}>
       <View style={styles.header}>
-        <View style={styles.titleRow}>
-          <Pressable accessibilityRole="button" accessibilityLabel="뒤로가기" onPress={() => backOrHome(navigation)} hitSlop={8}>
-            <Ionicons name="chevron-back" size={22} color={colors.ink} />
-          </Pressable>
-          <Text style={type.display}>할 일</Text>
+        <Text style={type.display}>{view === "documents" ? "문서" : "할 일"}</Text>
+        <View style={styles.segment} accessibilityRole="tablist">
+          {[["todos", "할 일"], ["documents", "문서"]].map(([key, label]) => (
+            <Pressable key={key} accessibilityRole="tab" accessibilityState={{ selected: view === key }}
+              onPress={() => setView(key)} style={[styles.segmentItem, view === key && styles.segmentOn]}>
+              <Text style={[styles.segmentText, view === key && styles.segmentTextOn]}>
+                {key === "todos" && !loading ? `${label} ${remaining}` : label}
+              </Text>
+            </Pressable>
+          ))}
         </View>
-        <Text style={styles.summary}>{loading ? "불러오는 중…" : `남은 할 일 ${remaining}개`}</Text>
       </View>
 
-      <ScrollView contentContainerStyle={styles.container}>
+      <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
+        {view === "documents" ? <DocumentListPanel /> : <>
         {!!error && (
           <View style={styles.errorBox}>
             <Text accessibilityRole="alert" style={styles.errorText}>{error}</Text>
@@ -144,6 +152,7 @@ export default function TodosScreen({ navigation }) {
             {showDone && <Card style={styles.listCard}>{groups.done.map((item, idx) => renderRow(item, idx, "done"))}</Card>}
           </View>
         )}
+        </>}
       </ScrollView>
     </SafeAreaView>
   );
@@ -152,8 +161,11 @@ export default function TodosScreen({ navigation }) {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.paper },
   header: { paddingHorizontal: spacing.lg, paddingTop: spacing.sm, paddingBottom: spacing.md, gap: 2 },
-  titleRow: { flexDirection: "row", alignItems: "center", gap: spacing.xs },
-  summary: { ...type.bodyStrong, color: colors.muted },
+  segment: { flexDirection: "row", backgroundColor: colors.line, borderRadius: 999, padding: 3, marginTop: spacing.sm },
+  segmentItem: { flex: 1, height: 34, borderRadius: 999, alignItems: "center", justifyContent: "center" },
+  segmentOn: { backgroundColor: colors.surface },
+  segmentText: { fontSize: 14, fontWeight: "600", color: colors.muted },
+  segmentTextOn: { color: colors.ink },
   container: { padding: spacing.lg, paddingTop: 0, paddingBottom: spacing.xxl },
   errorBox: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: spacing.sm, marginBottom: spacing.md },
   errorText: { ...type.small, color: colors.alert, flex: 1 },
