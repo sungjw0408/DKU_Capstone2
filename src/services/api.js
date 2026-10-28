@@ -5,6 +5,7 @@
 //  - 웹 / iOS 시뮬레이터: http://localhost:8000
 import { Platform } from "react-native";
 import { currentAuthUser } from "./auth";
+import { emitDataChanged } from "./dataEvents";
 
 const BASE_URL = (process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:8000").replace(/\/$/, "");
 const TIMEOUT_MS = 120000; // Gemini 분석은 수 초~수십 초 (사진은 글자 받아쓰기까지 해서 더 걸림)
@@ -42,6 +43,9 @@ export async function request(path, options = {}, config = {}) {
     error.code = body.detail?.code;
     throw error;
   }
+  // 문서·할 일을 바꾸는 요청이 성공하면 알림 예약을 다시 맞추도록 알린다
+  const method = String(options.method || "GET").toUpperCase();
+  if (method !== "GET" && /^\/api\/(documents|todos)/.test(path)) emitDataChanged();
   return body;
 }
 
