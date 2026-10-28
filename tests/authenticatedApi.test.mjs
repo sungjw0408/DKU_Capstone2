@@ -5,7 +5,8 @@ import test from "node:test";
 // Firebase 인증 상태와 전송 계층을 대체하고 실제 공통 요청 코드를 실행한다.
 const source = (await readFile(new URL("../src/services/api.js", import.meta.url), "utf8"))
   .replace('import { Platform } from "react-native";', 'const Platform = { OS: "web" };')
-  .replace('import { currentAuthUser } from "./auth";', 'const currentAuthUser = () => globalThis.apiTestUser;');
+  .replace('import { currentAuthUser } from "./auth";', 'const currentAuthUser = () => globalThis.apiTestUser;')
+  .replace('import { emitDataChanged } from "./dataEvents";', 'const emitDataChanged = () => { globalThis.apiDataChanged = (globalThis.apiDataChanged || 0) + 1; };');
 const { request, checkHealth } = await import(`data:text/javascript;base64,${Buffer.from(source).toString("base64")}`);
 const originalFetch = globalThis.fetch;
 test.after(() => { globalThis.fetch = originalFetch; delete globalThis.apiTestUser; });
@@ -59,4 +60,18 @@ test("원문 이미지도 동일한 인증 요청으로 받는다", async () => 
   const blob = await request("/api/documents/own/pages/1/image", {}, { responseType: "blob" });
   assert.equal(blob.type, "image/png");
   assert.deepEqual([...new Uint8Array(await blob.arrayBuffer())], [137, 80, 78, 71]);
+});
+
+test("문서·할 일을 바꾸는 요청이 성공하면 알림 다시 예약 신호를 보낸다", async () => {
+  globalThis.apiTestUser = alice;
+  globalThis.apiDataChanged = 0;
+  globalThis.fetch = async () => new Response("{}");
+  await request("/api/documents");
+  assert.equal(globalThis.apiDataChanged, 0); // 조회는 신호 없음
+  await request("/api/todos/t1", { method: "PATCH", body: "{}" });
+  await request("/api/documents/d1", { method: "DELETE" });
+  assert.equal(globalThis.apiDataChanged, 2);
+  globalThis.fetch = async () => new Response('{"detail":"실패"}', { status: 500 });
+  await assert.rejects(request("/api/documents/d1", { method: "DELETE" }));
+  assert.equal(globalThis.apiDataChanged, 2); // 실패하면 신호 없음
 });

@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useFocusEffect, useScrollToTop } from "@react-navigation/native";
-import { View, Text, ScrollView, Pressable, StyleSheet, Modal, Alert, Platform } from "react-native";
+import { View, Text, TextInput, ScrollView, Pressable, StyleSheet, Modal, Alert, Platform } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import Card from "../components/Card";
@@ -8,11 +8,13 @@ import Badge from "../components/Badge";
 import ProgressBar from "../components/ProgressBar";
 import DocumentEditModal from "../components/DocumentEditModal";
 import AccountSidebar from "../components/AccountSidebar";
+import EmptyStart from "../components/EmptyStart";
 import { colors, spacing, type, radius } from "../theme/theme";
 import { listDocuments, getDocument, listTodos, updateTodo, updateDocument, deleteDocument, } from "../services/api";
 import { localPlanDate } from "../utils/preparationPlan";
 import { upcomingDocuments, ddayLabel, planProgress } from "../utils/homeData";
 import { ddayTone } from "../utils/dday";
+import { DOCUMENT_FILTERS, documentCounts, documentStatus, matchesQuery } from "../utils/documentList";
 
 const todayLabel = () => {
   const days = ["일", "월", "화", "수", "목", "금", "토"];
@@ -38,6 +40,9 @@ export default function HomeScreen({ navigation, route }) {
   const [editingDocument, setEditingDocument] = useState(null);
   const [deletingId, setDeletingId] = useState(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  // 내 문서: 제목 검색 + 상태 필터 (진행 중 / 마감 지남 / 완료)
+  const [query, setQuery] = useState("");
+  const [docFilter, setDocFilter] = useState("all");
 
   useEffect(() => {
     if (isDocumentsScreen) return;
@@ -189,10 +194,18 @@ export default function HomeScreen({ navigation, route }) {
     );
   };
 
+  // 내 문서 목록은 서버의 최신 등록순을 그대로 두고 검색·필터만 적용한다
+  const docCounts = documentCounts(documents, query);
+  const visibleDocuments = documents
+    .filter((item) => matchesQuery(item, query))
+    .filter((item) => docFilter === "all" || documentStatus(item) === docFilter);
+  const noDocuments = !loading && !error && documents.length === 0;
+
   const sortedUpcoming = upcomingDocuments(documents, sortBy);
   const previewUpcoming = upcomingDocuments(documents).slice(0, 3);
   const emptyLabel = loading ? "불러오는 중…" : error ? "문서를 불러오지 못했어요."
-    : isDocumentsScreen ? "아직 추가한 문서가 없어요. 가운데 +를 눌러 문서를 추가해 주세요." : "다가오는 마감이 없습니다.";
+    : isDocumentsScreen ? (query.trim() ? `‘${query.trim()}’에 맞는 문서가 없어요.` : "이 조건에 맞는 문서가 없어요.")
+    : "다가오는 마감이 없습니다.";
   const renderDocumentCard = (list) => (
     <Card>
       {list.length === 0 && (
@@ -274,7 +287,8 @@ export default function HomeScreen({ navigation, route }) {
             onPress={() => navigation.navigate("Calendar")}>
             <Ionicons name="calendar-outline" size={22} color={colors.ink} />
           </Pressable>
-          <Pressable hitSlop={8}>
+          <Pressable hitSlop={8} accessibilityRole="button" accessibilityLabel="알림함"
+            onPress={() => navigation.navigate("Notifications")}>
             <Ionicons name="notifications-outline" size={22} color={colors.ink} />
           </Pressable>
           <Pressable hitSlop={8} accessibilityRole="button" accessibilityLabel="메뉴 열기"
@@ -288,12 +302,35 @@ export default function HomeScreen({ navigation, route }) {
         {!!error && <Text accessibilityRole="alert" style={[type.small, { color: colors.alert, marginBottom: spacing.md }]}>{error}</Text>}
         {!!error && <Pressable accessibilityRole="button" disabled={loading} onPress={() => setReload((prev) => prev + 1)}
           style={{ marginBottom: spacing.md }}><Text style={[type.bodyStrong, { color: colors.stamp }]}>다시 불러오기</Text></Pressable>}
-        {isDocumentsScreen ? <>
+        {/* 문서가 하나도 없으면 첫 공지 안내 */}
+        {noDocuments ? <EmptyStart /> : isDocumentsScreen ? <>
           <View style={styles.sectionHeaderRow}>
             <Text accessibilityRole="header" style={styles.sectionTitle}>내 문서</Text>
             <Text style={type.small}>{loading ? "불러오는 중…" : `${documents.length}개`}</Text>
           </View>
-          {renderDocumentCard(documents)}
+          <View style={styles.searchBox}>
+            <Ionicons name="search" size={18} color={colors.muted} />
+            <TextInput value={query} onChangeText={setQuery} placeholder="문서 제목 검색"
+              placeholderTextColor={colors.muted} style={styles.searchInput} returnKeyType="search"
+              accessibilityLabel="문서 제목 검색" />
+            {!!query && (
+              <Pressable accessibilityRole="button" accessibilityLabel="검색어 지우기" onPress={() => setQuery("")} hitSlop={8}>
+                <Ionicons name="close-circle" size={18} color={colors.muted} />
+              </Pressable>
+            )}
+          </View>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterChips}>
+            {DOCUMENT_FILTERS.map(([key, label]) => {
+              const on = docFilter === key;
+              return (
+                <Pressable key={key} accessibilityRole="button" accessibilityState={{ selected: on }}
+                  onPress={() => setDocFilter(key)} style={[styles.filterChip, on && styles.filterChipOn]}>
+                  <Text style={[styles.filterChipText, on && styles.filterChipTextOn]}>{label} {docCounts[key]}</Text>
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+          {renderDocumentCard(visibleDocuments)}
         </> : <>
         {/* 탭 버튼 */}
         <View style={styles.tabRow}>
@@ -493,6 +530,20 @@ const styles = StyleSheet.create({
 },
   brand: { ...type.h1 },
   scroll: { flex: 1 },
+  searchBox: {
+    flexDirection: "row", alignItems: "center", gap: spacing.sm,
+    backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.line, borderRadius: radius.md,
+    paddingHorizontal: spacing.md, height: 44, marginBottom: spacing.md,
+  },
+  searchInput: { flex: 1, fontSize: 14, color: colors.ink, paddingVertical: 0, outlineStyle: "none" },
+  filterChips: { gap: spacing.sm, paddingBottom: spacing.md },
+  filterChip: {
+    paddingHorizontal: spacing.md, height: 32, borderRadius: radius.pill, justifyContent: "center",
+    backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.line,
+  },
+  filterChipOn: { backgroundColor: colors.stamp, borderColor: colors.stamp },
+  filterChipText: { fontSize: 13, fontWeight: "600", color: colors.ink },
+  filterChipTextOn: { color: "#FFFFFF" },
   container: { padding: spacing.lg, paddingBottom: spacing.xl },
 
   tabRow: { flexDirection: "row", gap: spacing.sm, marginBottom: spacing.lg },
