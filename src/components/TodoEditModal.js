@@ -25,6 +25,7 @@ import {
 export default function TodoEditModal({
   todo,
   maxDate,
+  defaultDate = "",
   onSave,
   onClose,
 }) {
@@ -33,7 +34,7 @@ export default function TodoEditModal({
   );
 
   const [date, setDate] = useState(
-    todo?.date ?? ""
+    todo?.date || defaultDate
   );
 
   const [time, setTime] = useState(
@@ -57,11 +58,8 @@ export default function TodoEditModal({
       return;
     }
 
-    // 날짜가 없는데 시간만 설정되는 상황 방지
-    if (time && !date) {
-      setError(
-        "시간을 지정하려면 날짜를 먼저 선택해 주세요."
-      );
+    if (!date) {
+      setError("할 일 날짜를 선택해 주세요.");
       return;
     }
 
@@ -77,7 +75,7 @@ export default function TodoEditModal({
       });
     } catch (e) {
       setError(
-        e.message ?? "수정에 실패했습니다."
+        e.message ?? "할 일을 저장하지 못했어요."
       );
     } finally {
       setSaving(false);
@@ -113,12 +111,12 @@ export default function TodoEditModal({
             {/* 상단 제목 + 닫기 버튼 */}
             <View style={styles.header}>
               <Text style={type.h1}>
-                할 일 수정
+                {todo ? "할 일 수정" : "할 일 추가"}
               </Text>
 
               <Pressable
                 accessibilityRole="button"
-                accessibilityLabel="수정 창 닫기"
+                accessibilityLabel="할 일 편집 창 닫기"
                 disabled={saving}
                 onPress={onClose}
                 hitSlop={8}
@@ -177,7 +175,6 @@ export default function TodoEditModal({
                   setError("");
                 }}
                 maxDate={maxDate}
-                allowClear
               />
 
 
@@ -249,7 +246,7 @@ export default function TodoEditModal({
                   label={
                     saving
                       ? "저장 중…"
-                      : "수정 저장"
+                      : todo ? "수정 저장" : "추가 저장"
                   }
                   disabled={saving}
                   onPress={handleSave}

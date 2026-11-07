@@ -32,6 +32,28 @@ export function groupTodos(todos, today = new Date()) {
   return groups;
 }
 
+export function groupHomeTodos(todos, documents, today = new Date()) {
+  const todayKey = keyOf(today);
+  const documentsById = new Map(documents.map((document) => [document.id, document]));
+  const groups = new Map();
+
+  for (const todo of todos) {
+    const date = validDate(todo.date);
+    const overdue = !!date && date < todayKey && !todo.is_completed;
+    if (!overdue && date !== todayKey) continue;
+
+    const key = todo.document_id || todo.doc_title || todo.id;
+    if (!groups.has(key)) {
+      const document = documentsById.get(todo.document_id);
+      groups.set(key, { key, title: document?.title || todo.doc_title || "제목 없는 문서", dday: document?.dday, todos: [] });
+    }
+    groups.get(key).todos.push({ ...todo, overdue });
+  }
+
+  for (const group of groups.values()) group.todos.sort(byDate);
+  return [...groups.values()];
+}
+
 // "2026-10-23" → "내일" / "10월 25일 (일)" / "날짜 미정"
 export function todoDateLabel(date, today = new Date()) {
   if (!validDate(date)) return "날짜 미정";

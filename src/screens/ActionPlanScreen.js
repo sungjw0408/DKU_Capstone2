@@ -2,17 +2,18 @@ import { pageContent } from "../theme/theme";
 import { Text } from "../components/Typography";
 import React, { useCallback, useRef, useState } from "react";
 import { useFocusEffect } from "@react-navigation/native";
-import { View, ScrollView, Pressable, StyleSheet, Modal } from "react-native";
+import { Alert, Platform, View, ScrollView, Pressable, StyleSheet, Modal } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import ScreenSurface from "../components/ScreenSurface";
 import { Ionicons } from "@expo/vector-icons";
 import Card from "../components/Card";
 import PrimaryButton from "../components/PrimaryButton";
 import PlanEditorModal from "../components/PlanEditorModal";
+import TodoOriginBadge from "../components/TodoOriginBadge";
 import { colors, spacing, type, radius } from "../theme/theme";
 import { actionPlan } from "../data/mockData";
 import { getDocument, savePlan, registerPlan } from "../services/api";
-import { createDocumentPlan, formatStepDate, formatDeadline, formatDuration, getDday, sortPlanSteps } from "../utils/preparationPlan";
+import { createDocumentPlan, formatStepDate, formatDeadline, formatDuration, getDday, newTodoStepId, sortPlanSteps } from "../utils/preparationPlan";
 import { ddayTone, DDAY_COLORS } from "../utils/dday";
 import { daysUntil } from "../utils/todoManagement";
 import { backOrHome } from "../navigation/routes";
@@ -50,7 +51,11 @@ export default function ActionPlanScreen({ navigation, route }) {
           if (!saved) throw e;
         }
       }
-      return { ...base, steps: saved.steps, revision: saved.revision, registered: saved.registered };
+      const defaultDate = saved.steps.find((step) => step.isDeadline)?.date || base.startDate;
+      const steps = !saved.registered && defaultDate
+        ? saved.steps.map((step) => !step.isDeadline && !step.date ? { ...step, date: defaultDate } : step)
+        : saved.steps;
+      return { ...base, steps, revision: saved.revision, registered: saved.registered };
     };
     load().then((plan) => { if (active) setResource(plan); })
       .catch((e) => { if (active) setError(e.message); })
@@ -83,7 +88,10 @@ function ActionPlanContent({ navigation, plan, onReload }) {
   const revision = useRef(plan.revision || 0);
   const busy = useRef(false);
   const deadline = steps.find((step) => step.isDeadline);
+  const defaultDate = deadline?.date || plan.startDate || "";
   const preparationSteps = steps.filter((step) => !step.isDeadline);
+  const needsDates = preparationSteps.some((step) => !step.date);
+  const canRegister = plan.hasAnalysis && (plan.registered || (preparationSteps.length > 0 && !needsDates));
   const completedCount = preparationSteps.filter((step) => step.done).length;
 
   const persist = async (nextSteps, register = false) => {
@@ -115,16 +123,30 @@ function ActionPlanContent({ navigation, plan, onReload }) {
 
   const saveStep = async (step) => {
     const normalizedStep = step.isDeadline ? { ...step, done: false } : step;
-    const savedStep = step.id ? normalizedStep : { ...normalizedStep,
-      id: `custom-step-${Date.now()}-${Math.random().toString(36).slice(2, 10)}` };
+    const savedStep = step.id ? normalizedStep : { ...normalizedStep, id: newTodoStepId(), origin: "user" };
     const next = sortPlanSteps(step.id ? steps.map((item) => item.id === step.id ? savedStep : item) : [...steps, savedStep]);
     if (await persist(next)) setEditorMode(null);
   };
 
+  const deleteStep = (step) => {
+    const remove = () => persist(steps.filter((item) => item.id !== step.id)).catch(() => {});
+    const message = `‘${step.label}’ 할 일을 삭제할까요?`;
+    if (Platform.OS === "web") {
+      if (window.confirm(message)) remove();
+      return;
+    }
+    Alert.alert("할 일 삭제", message, [
+      { text: "취소", style: "cancel" }, { text: "삭제", style: "destructive", onPress: remove },
+    ]);
+  };
+
   const register = async () => {
     if (plan.isMock) return setShowPreview(true);
+    if (!canRegister) return;
     try {
-      if (await persist(steps, true)) navigation.navigate("Management", { documentId: plan.id, documentTitle: plan.title });
+      if (plan.registered || await persist(steps, true)) {
+        navigation.navigate("Management", { documentId: plan.id, documentTitle: plan.title });
+      }
     } catch (_) { /* 저장 실패 시 계획 화면에 머문다. */ }
   };
 
@@ -136,8 +158,8 @@ function ActionPlanContent({ navigation, plan, onReload }) {
         </Pressable>
       </View>
       <View style={styles.heading}>
-        <Text style={styles.title}>AI가 만든 준비 계획</Text>
-        <Pressable accessibilityRole="button" disabled={saving} onPress={() => setEditorMode("edit")} style={({ pressed }) => [styles.editButton, pressed && styles.pressed]}>
+        <Text style={styles.title}>준비 계획</Text>
+        <Pressable accessibilityRole="button" disabled={saving} onPress={() => setEditorMode({ mode: "edit" })} style={({ pressed }) => [styles.editButton, pressed && styles.pressed]}>
           <Ionicons name="pencil-outline" size={16} color={planColors.accent} />
           <Text style={styles.editText}>수정하기</Text>
         </Pressable>
@@ -186,17 +208,30 @@ function ActionPlanContent({ navigation, plan, onReload }) {
                   {index < steps.length - 1 && <View style={styles.connectorDot} />}
                 </View>
                 <View style={styles.stepBody}>
-                  <Text style={[styles.stepDate, step.isDeadline && styles.deadlineDate]}>{formatStepDate(step.date)}</Text>
+                  {!step.date && !step.isDeadline ? (
+                    <Pressable accessibilityRole="button" accessibilityLabel={`${step.label} 날짜 선택`} disabled={saving}
+                      onPress={() => setEditorMode({ mode: "edit", stepId: step.id })} style={styles.dateAction}>
+                      <Ionicons name="calendar-outline" size={15} color={planColors.accent} />
+                      <Text style={styles.editText}>날짜 선택</Text>
+                    </Pressable>
+                  ) : <Text style={[styles.stepDate, step.isDeadline && styles.deadlineDate]}>{formatStepDate(step.date)}</Text>}
                   <Text style={styles.stepTitle}>{step.label}</Text>
+                  {!step.isDeadline && <TodoOriginBadge todo={step} />}
                   {step.durationMinutes != null && <Text style={styles.stepDetail}>예상 소요시간 {formatDuration(step.durationMinutes)}</Text>}
                   {!!step.notes && <Text style={styles.stepDetail}>{step.notes}</Text>}
                   {!!step.time && <Text style={[styles.stepDetail, step.isDeadline && styles.deadlineTime]}>{step.isDeadline ? "마감 " : "예정 "}{step.time}</Text>}
                 </View>
+                {!step.isDeadline && (
+                  <Pressable accessibilityRole="button" accessibilityLabel={`${step.label} 삭제`} disabled={saving}
+                    onPress={() => deleteStep(step)} style={styles.stepAction}>
+                    <Ionicons name="trash-outline" size={18} color={colors.muted} />
+                  </Pressable>
+                )}
               </View>
             ))}
           </View>
 
-          <Pressable accessibilityRole="button" disabled={saving} onPress={() => setEditorMode("add")} style={({ pressed }) => [styles.addButton, pressed && styles.pressed]}>
+          <Pressable accessibilityRole="button" disabled={saving} onPress={() => setEditorMode({ mode: "add" })} style={({ pressed }) => [styles.addButton, pressed && styles.pressed]}>
             <Ionicons name="add" size={18} color={planColors.accent} />
             <Text style={styles.addText}>일정 추가하기</Text>
           </Pressable>
@@ -206,12 +241,14 @@ function ActionPlanContent({ navigation, plan, onReload }) {
           <Text accessibilityRole="alert" style={[type.small, { color: colors.alert, marginTop: spacing.md }]}>{error}</Text>
           <Pressable accessibilityRole="button" onPress={onReload}><Text style={styles.editText}>다시 불러오기</Text></Pressable>
         </View>}
-        <PrimaryButton label={saving ? "저장 중…" : "이대로 등록하기"} disabled={saving || !plan.hasAnalysis}
+        {!plan.registered && needsDates && <Text style={styles.dateHint}>모든 할 일의 날짜를 선택한 뒤 등록해 주세요.</Text>}
+        <PrimaryButton label={saving ? "저장 중…" : plan.registered ? "관리 화면으로" : "이대로 등록하기"} disabled={saving || !canRegister}
           onPress={register} style={styles.registerButton} />
-        <Text style={styles.mockNote}>{plan.isMock ? "예시 계획 · 편집 내용은 이 화면에서만 유지됩니다." : "문서 분석 결과 · 날짜와 소요시간은 직접 지정해 주세요.\n수정한 준비 계획은 자동 저장됩니다."}</Text>
+        <Text style={styles.mockNote}>{plan.isMock ? "예시 계획 · 편집 내용은 이 화면에서만 유지됩니다." : "수정한 준비 계획은 자동 저장됩니다."}</Text>
       </ScrollView>
 
-      {editorMode && <PlanEditorModal mode={editorMode} steps={steps} allowUndated={!plan.isMock} onSave={saveStep} onClose={() => setEditorMode(null)} />}
+      {editorMode && <PlanEditorModal {...editorMode} steps={steps} defaultDate={defaultDate}
+        onSave={saveStep} onClose={() => setEditorMode(null)} />}
 
       <Modal visible={showPreview} transparent animationType="fade" onRequestClose={() => setShowPreview(false)}>
         <SafeAreaView style={styles.previewOverlay}>
@@ -240,10 +277,13 @@ function ActionPlanContent({ navigation, plan, onReload }) {
 }
 
 const styles = StyleSheet.create({
+  dateAction: { flexDirection: "row", alignItems: "center", gap: spacing.xs, alignSelf: "flex-start", minHeight: 32 },
+  dateHint: { ...type.small, color: colors.alert, marginTop: spacing.md },
+  stepAction: { alignSelf: "flex-start", alignItems: "center", justifyContent: "center", width: 36, height: 36 },
   safe: { flex: 1, backgroundColor: colors.paper },
   backRow: { paddingHorizontal: spacing.lg, paddingTop: spacing.xs },
   backButton: { width: 44, height: 36, justifyContent: "center" },
-  heading: { flexDirection: "row", alignItems: "center", gap: spacing.sm, paddingHorizontal: spacing.xl, paddingTop: spacing.sm, paddingBottom: 112 },
+  heading: { flexDirection: "row", alignItems: "center", gap: spacing.sm, paddingHorizontal: spacing.xl, paddingTop: spacing.sm, paddingBottom: spacing.md },
   title: { ...type.h1, color: planColors.ink, flex: 1, fontSize: 19 },
   editButton: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: spacing.xs, borderWidth: 1, borderColor: planColors.border, borderRadius: radius.sm, paddingHorizontal: spacing.sm, minHeight: 34 },
   editText: { fontSize: 12, fontWeight: "700", color: planColors.accent },

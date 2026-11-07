@@ -10,11 +10,12 @@ import { Ionicons } from "@expo/vector-icons";
 import Card from "../components/Card";
 import ProgressBar from "../components/ProgressBar";
 import { colors, spacing, type, radius } from "../theme/theme";
-import { listTodos, updateTodo, editTodo, deleteTodo, listDocuments, updateDocument, deleteDocument, getDocument } from "../services/api";
-import { formatStepDate, getDday, localPlanDate } from "../utils/preparationPlan";
+import { listTodos, addTodo, updateTodo, editTodo, deleteTodo, listDocuments, updateDocument, deleteDocument, getDocument } from "../services/api";
+import { formatStepDate, getDday, localPlanDate, newTodoStepId } from "../utils/preparationPlan";
 import { daysUntil, googleCalendarUrl, isOverdue, nextTodo, splitDeadline } from "../utils/todoManagement";
 import { ddayTone, DDAY_COLORS } from "../utils/dday";
 import TodoEditModal from "../components/TodoEditModal";
+import TodoOriginBadge from "../components/TodoOriginBadge";
 import DocumentEditModal from "../components/DocumentEditModal";
 import { resetToHome } from "../navigation/routes";
 
@@ -45,6 +46,7 @@ export default function ManagementScreen({ navigation, route }) {
   const [busyId, setBusyId] = useState(null);
   const [doc, setDoc] = useState(null);
   const [editingTodo, setEditingTodo] = useState(null);
+  const [addingStepId, setAddingStepId] = useState(null);
   const [showDocumentMenu, setShowDocumentMenu] = useState(false);
   const [editingDocument, setEditingDocument] = useState(null);
   
@@ -112,6 +114,19 @@ export default function ManagementScreen({ navigation, route }) {
     } catch (e) {
       setError(e.message);
       throw e;
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const handleAddSave = async (todo) => {
+    if (!addingStepId || busyId) return;
+    setBusyId(addingStepId);
+    setError("");
+    try {
+      const { todos } = await addTodo(documentId, { ...todo, step_id: addingStepId });
+      setTodoList(todos);
+      setAddingStepId(null);
     } finally {
       setBusyId(null);
     }
@@ -334,6 +349,13 @@ export default function ManagementScreen({ navigation, route }) {
             </View>
           ) : null}
 
+          {documentId && doc?.registered && (
+            <Pressable accessibilityRole="button" accessibilityLabel="할 일 추가" disabled={!!busyId}
+              onPress={() => setAddingStepId(newTodoStepId())} style={styles.addTodo}>
+              <Ionicons name="add" size={18} color={colors.stamp} />
+              <Text style={styles.calendarButtonText}>할 일 추가</Text>
+            </Pressable>
+          )}
           {todoList.length === 0 ? (
             <Text style={styles.emptyText}>등록된 할 일이 없습니다.</Text>
           ) : (
@@ -360,6 +382,7 @@ export default function ManagementScreen({ navigation, route }) {
                         : "날짜 미정"}
                       {isOverdue(item) ? " · 기한 지남" : ""}
                     </Text>
+                    <TodoOriginBadge todo={item} />
                   </View>
                 </Pressable>
 
@@ -516,12 +539,13 @@ export default function ManagementScreen({ navigation, route }) {
         />
       )}
 
-      {editingTodo && (
+      {(editingTodo || addingStepId) && (
         <TodoEditModal
           todo={editingTodo}
           maxDate={deadline?.date}
-          onSave={handleEditSave}
-          onClose={() => setEditingTodo(null)}
+          defaultDate={doc?.todo_default_date ?? deadline?.date}
+          onSave={addingStepId ? handleAddSave : handleEditSave}
+          onClose={() => { setEditingTodo(null); setAddingStepId(null); }}
         />
       )}      
     </ScreenSurface>
@@ -529,6 +553,7 @@ export default function ManagementScreen({ navigation, route }) {
 }
 
 const styles = StyleSheet.create({
+  addTodo: { flexDirection: "row", alignItems: "center", gap: spacing.xs, minHeight: 44, alignSelf: "flex-start", paddingHorizontal: spacing.sm },
   safe: { flex: 1, backgroundColor: colors.paper },
   center: { alignItems: "center", justifyContent: "center" },
   container: { ...pageContent, padding: spacing.lg, paddingBottom: 112 },

@@ -105,26 +105,16 @@ async function applyPlan(items) {
   }
 }
 
-// 이미 불러온 문서·할 일로 예약을 맞춘다 (여러 번 불려도 순서대로 하나씩)
-export function syncDeadlineNotifications(documents, todos, { ask = false } = {}) {
+// 조회부터 예약까지 순서대로 처리해 이전 조회 결과가 최신 일정을 덮지 않게 한다.
+export function refreshDeadlineNotifications({ ask = false } = {}) {
   if (!notificationsSupported) return Promise.resolve();
   queue = queue.then(async () => {
     if (!(await isNotificationEnabled())) return;
     if (!(await ensurePermission(ask))) return;
+    const [documents, todos] = await Promise.all([listDocuments(), listTodos()]);
     await applyPlan(buildNotificationPlan(documents, todos, new Date(), { hour: await getReminderHour() }));
   }).catch((e) => console.warn("마감 알림 예약 실패:", e?.message));
   return queue;
-}
-
-// 서버에서 목록을 새로 받아 예약을 맞춘다
-export async function refreshDeadlineNotifications(options) {
-  if (!notificationsSupported) return;
-  try {
-    const [documents, todos] = await Promise.all([listDocuments(), listTodos()]);
-    await syncDeadlineNotifications(documents, todos, options);
-  } catch (e) {
-    console.warn("마감 알림 새로고침 실패:", e?.message);
-  }
 }
 
 // 설정 탭 스위치

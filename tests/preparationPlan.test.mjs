@@ -5,7 +5,7 @@ import test from "node:test";
 // Expo가 사용하는 ES 모듈 유틸을 앱의 패키지 설정 변경 없이 Node에서 검증한다.
 const source = await readFile(new URL("../src/utils/preparationPlan.js", import.meta.url), "utf8");
 const {
-  createDocumentPlan, formatDeadline, formatStepDate, getDday, localPlanDate,
+  createDocumentPlan, formatDeadline, getDday, localPlanDate,
   sortPlanSteps, validatePlanStep, durationFromParts, formatDuration,
 } = await import(`data:text/javascript;base64,${Buffer.from(source).toString("base64")}`);
 
@@ -19,23 +19,37 @@ const form = (overrides = {}) => ({
   label: "입사신청서 작성", date: "", time: "", durationHours: "", durationMinutes: "", ...overrides,
 });
 
-test("문서의 제목·마감·할 일·필요 서류를 연결하고 준비 날짜와 소요시간은 만들지 않는다", () => {
+test("AI 할 일의 기본 날짜는 공지 마감일이며 시각과 소요시간은 비워 둔다", () => {
   const plan = createDocumentPlan({ documentId: "doc-a", view }, "2027-01-10");
   assert.equal(plan.title, view.title);
   assert.deepEqual(plan.requiredDocs, view.requiredDocs);
   assert.deepEqual(plan.steps.slice(0, -1).map((step) => step.label), view.todos.map((todo) => todo.text));
   for (const step of plan.steps.slice(0, -1)) {
-    assert.equal(step.date, "");
+    assert.equal(step.date, "2027-01-15");
     assert.equal(step.time, "");
     assert.equal(step.durationMinutes, null);
     assert.equal(step.done, false);
-    assert.equal(formatStepDate(step.date), "날짜 미정");
+    assert.equal(step.origin, "ai");
   }
   const deadline = plan.steps.at(-1);
   assert.equal(deadline.isDeadline, true);
   assert.equal(deadline.done, false);
   assert.equal(formatDeadline(deadline), "2027년 1월 15일 16:00");
   assert.equal(getDday(deadline.date, plan.referenceDate), "D-5");
+});
+
+test("마감일이 없으면 확인된 시작일을 쓰고, 둘 다 없으면 날짜 입력이 필요하다", () => {
+  const analysis = { fields: [
+    { key: "application_start", status: "unverified", normalized_datetime: "2027-01-01" },
+    { key: "application_start", status: "verified", normalized_datetime: "2027-01-09T10:00" },
+  ] };
+  assert.equal(createDocumentPlan({ view, analysis }).steps[0].date, "2027-01-15");
+  const startOnly = createDocumentPlan({ view: { ...view, deadline: null }, analysis });
+  assert.equal(startOnly.steps[0].date, "2027-01-09");
+  assert.equal(startOnly.steps[0].time, "");
+  const undated = createDocumentPlan({ view: { ...view, deadline: null } });
+  assert.equal(undated.steps[0].date, "");
+  assert.match(validatePlanStep(form(), undated.steps, undated.steps[0].id), /날짜를 선택/);
 });
 
 test("시각 없는 마감일에 시각을 만들지 않고, 잘못된 날짜는 원문만 표시한다", () => {
@@ -66,7 +80,7 @@ test("다른 문서와 승인·삭제 후 갱신된 분석 결과는 각각 새 
   assert.equal(second.id, "doc-b");
   assert.equal(second.steps[0].label, "기획서 제출");
   assert.equal(second.steps[0].done, false);
-  assert.equal(second.steps[0].date, "");
+  assert.equal(second.steps[0].date, "2027-01-15");
   const revised = createDocumentPlan({ view: { ...view, todos: [view.todos[1]], requiredDocs: ["주민등록등본"] } });
   assert.deepEqual(revised.steps.filter((step) => !step.isDeadline).map((step) => step.label), ["주민등록등본 준비"]);
   assert.deepEqual(revised.requiredDocs, ["주민등록등본"]);

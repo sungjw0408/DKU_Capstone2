@@ -106,6 +106,9 @@ export const registerPlan = (id, steps, revision) => request(`/api/documents/${e
   method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ steps, revision }),
 });
 export const listTodos = (documentId) => request(`/api/todos${documentId ? `?document_id=${encodeURIComponent(documentId)}` : ""}`);
+export const addTodo = (documentId, todo) => request(`/api/documents/${encodeURIComponent(documentId)}/todos`, {
+  method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(todo),
+});
 export const updateTodo = (id, completed) => request(`/api/todos/${encodeURIComponent(id)}`, {
   method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ is_completed: completed }),
 });

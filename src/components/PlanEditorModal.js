@@ -33,16 +33,20 @@ function Field({ label, value, onChangeText, placeholder, keyboardType = "defaul
 }
 
 // 부모가 표시할 때 새로 마운트하므로 취소한 입력은 다음 편집에 남지 않는다.
-export default function PlanEditorModal({ mode, steps, onSave, onClose, allowUndated = false }) {
-  const [selectedId, setSelectedId] = useState(null);
-  const [form, setForm] = useState(() => makeForm(null, allowUndated ? "" : steps[0]?.date ?? ""));
+export default function PlanEditorModal({ mode, stepId, steps, defaultDate, onSave, onClose }) {
+  const [selectedId, setSelectedId] = useState(stepId ?? null);
+  const [form, setForm] = useState(() => makeForm(steps.find((step) => step.id === stepId), defaultDate));
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const selectedStep = steps.find((step) => step.id === selectedId);
+  const allowUndated = !!selectedStep?.isDeadline;
   const deadline = steps.find((step) => step.isDeadline);
   const lastPreparationDate = steps.filter((step) => !step.isDeadline && step.date).map((step) => step.date).sort().pop();
   const showList = mode === "edit" && !selectedId;
-  const update = (key) => (value) => { setForm((prev) => ({ ...prev, [key]: value })); setError(""); };
+  const update = (key) => (value) => {
+    setForm((prev) => ({ ...prev, [key]: value, ...(key === "date" && !value ? { time: "" } : {}) }));
+    setError("");
+  };
   const selectStep = (step) => { setSelectedId(step.id); setForm(makeForm(step, "")); setError(""); };
   const backToList = () => { setSelectedId(null); setError(""); };
   const save = async () => {
@@ -78,7 +82,10 @@ export default function PlanEditorModal({ mode, steps, onSave, onClose, allowUnd
                     <Pressable key={step.id} accessibilityRole="button" accessibilityLabel={`${step.label} 수정`}
                       onPress={() => selectStep(step)} style={({ pressed }) => [styles.listRow, pressed && styles.pressed]}>
                       <View style={styles.listText}>
-                        <Text style={styles.listDate}>{formatStepDate(step.date)}{step.isDeadline ? " · 최종 마감" : ""}</Text>
+                        <Text style={styles.listDate}>
+                          {step.date || step.isDeadline ? formatStepDate(step.date) : "날짜 선택 필요"}
+                          {step.isDeadline ? " · 최종 마감" : ""}
+                        </Text>
                         <Text style={type.bodyStrong}>{step.label}</Text>
                       </View>
                       <Ionicons name="create-outline" size={20} color={accent} />
@@ -111,8 +118,8 @@ export default function PlanEditorModal({ mode, steps, onSave, onClose, allowUnd
             </ScrollView>
             {!showList && (
               <View style={styles.footer}>
-                <Pressable accessibilityRole="button" disabled={saving} onPress={mode === "edit" ? backToList : onClose} style={styles.cancelButton}>
-                  <Text style={styles.cancelText}>{mode === "edit" ? "목록으로" : "취소"}</Text>
+                <Pressable accessibilityRole="button" disabled={saving} onPress={mode === "edit" && !stepId ? backToList : onClose} style={styles.cancelButton}>
+                  <Text style={styles.cancelText}>{mode === "edit" && !stepId ? "목록으로" : "취소"}</Text>
                 </Pressable>
                 <View style={styles.saveButton}>
                   <PrimaryButton disabled={saving} label={saving ? "저장 중…" : mode === "add" ? "일정 추가하기" : "수정 저장하기"} onPress={save} style={styles.primary} />

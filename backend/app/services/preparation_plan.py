@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import re
 from datetime import date
+from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -17,6 +18,7 @@ class PlanStep(BaseModel):
     done: bool = False
     isDeadline: bool = False
     deadlineText: str = ""
+    origin: Literal["ai", "user"] | None = None
 
     @model_validator(mode="after")
     def validate_schedule(self):
@@ -30,6 +32,8 @@ class PlanStep(BaseModel):
             raise ValueError("날짜와 올바른 시간을 지정해 주세요.")
         if self.isDeadline:
             self.done = False
+        elif self.origin is None:
+            self.origin = step_origin(self.id)
         return self
 
 
@@ -48,6 +52,14 @@ class PlanSave(BaseModel):
             raise ValueError("준비 일정은 최종 마감일 이전 또는 같은 날이어야 합니다.")
         self.steps.sort(key=lambda step: (step.isDeadline, not bool(step.date), step.date, step.time))
         return self
+
+
+class TodoCreate(BaseModel):
+    title: str = Field(min_length=1, max_length=500)
+    date: str = ""
+    time: str = ""
+    notes: str = Field(default="", max_length=4000)
+    step_id: str | None = Field(default=None, max_length=160, pattern=r"^custom-step-[a-zA-Z0-9_-]+$")
 
 
 class TodoPatch(BaseModel):
@@ -148,6 +160,28 @@ def todo_id(document_id: str, step_id: str) -> str:
     return f"{document_id}__{step_id}"
 
 
+def step_origin(step_id: str) -> Literal["ai", "user"] | None:
+    if step_id.startswith("document-todo-"):
+        return "ai"
+    if step_id.startswith("custom-step-"):
+        return "user"
+    return None
+
+
+def default_todo_date(deadline: str | None, analysis: dict | None) -> str:
+    starts = [field.get("normalized_datetime") for field in (analysis or {}).get("fields", [])
+              if field["key"] == "application_start" and field["status"] != "unverified"]
+    for candidate in (deadline, *starts):
+        day = (candidate or "").split("T", 1)[0]
+        if re.fullmatch(r"\d{4}-\d{2}-\d{2}", day):
+            try:
+                if date.fromisoformat(day).year >= 1000:
+                    return day
+            except ValueError:
+                continue
+    return ""
+
+
 def plan_todos(document_id: str, title: str, plan: dict) -> list[dict]:
     return [{
         "id": todo_id(document_id, step["id"]), "document_id": document_id,
@@ -155,6 +189,7 @@ def plan_todos(document_id: str, title: str, plan: dict) -> list[dict]:
         "date": step.get("date", ""), "time": step.get("time", ""),
         "duration_minutes": step.get("durationMinutes"), "notes": step.get("notes", ""),
         "order": index, "is_completed": step.get("done", False),
+        "origin": step.get("origin") or step_origin(step["id"]),
         "updated_at": plan["updated_at"],
     } for index, step in enumerate(plan["steps"]) if not step.get("isDeadline")]
 
@@ -180,5 +215,6 @@ def document_list_item(document_id: str, record: dict, today: date) -> dict:
     steps = [step for step in (plan or {}).get("steps", []) if not step.get("isDeadline")]
     item.update({"created_at": record.get("created_at"), "status": record.get("status", "in_progress"),
                  "registered": bool(plan and plan.get("registered")),
+                 "todo_default_date": default_todo_date(item["deadline"], analysis_data),
                  "progress": sum(step.get("done", False) for step in steps) / len(steps) if steps else 0})
     return item

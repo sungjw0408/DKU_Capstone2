@@ -17,7 +17,7 @@ from app.llm import get_llm
 from app.schemas import AnalysisResult
 from app.services import originals, pipeline
 from app.services.frontend_view import to_analysis_detail
-from app.services.preparation_plan import DocumentPatch, PlanSave, RevisionConflict, TodoPatch, document_list_item
+from app.services.preparation_plan import DocumentPatch, PlanSave, RevisionConflict, TodoCreate, TodoPatch, document_list_item
 from app.services.store import get_store
 from app.utils.text import split_sentences
 
@@ -310,9 +310,23 @@ def save_plan(doc_id: str, body: PlanSave, store=Depends(user_store)):
 
 @router.post("/documents/{doc_id}/plan/register")
 def register_plan(doc_id: str, body: PlanSave, store=Depends(user_store)):
-    if not any(not step.isDeadline for step in body.steps):
+    todos = [step for step in body.steps if not step.isDeadline]
+    if not todos:
         raise HTTPException(422, "등록할 준비 일정을 추가해 주세요.")
+    if any(not step.date for step in todos):
+        raise HTTPException(422, "등록하기 전에 모든 할 일의 날짜를 선택해 주세요.")
     return _save_plan(doc_id, body, store, registered=True)
+
+
+@router.post("/documents/{doc_id}/todos", status_code=201)
+def add_document_todo(doc_id: str, body: TodoCreate, store=Depends(user_store)):
+    step_id = body.step_id or f"custom-step-{uuid.uuid4().hex}"
+    try:
+        return {"todos": store.add_todo(doc_id, step_id, body)}
+    except KeyError as exc:
+        raise HTTPException(404, "분석된 문서를 찾을 수 없습니다.") from exc
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
 
 
 @router.get("/todos")

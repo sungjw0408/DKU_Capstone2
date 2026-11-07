@@ -24,7 +24,7 @@ def saved_document(monkeypatch):
     client = TestClient(app)
     result = client.post("/api/documents/analyze", data={"text": SAMPLE}).json()
     steps = [{"id": f'document-todo-{todo["id"]}', "label": todo["text"],
-              "date": "", "time": "", "notes": "필요 서류: 신청서", "done": False}
+              "date": "2070-09-25", "time": "", "notes": "필요 서류: 신청서", "done": False}
              for todo in result["view"]["todos"]]
     assert len(steps) >= 2
     steps.append({"id": "document-deadline", "label": "최종 마감", "date": "2070-09-25",
@@ -70,6 +70,42 @@ def test_registration_is_idempotent_and_never_registers_deadline(saved_document)
     assert len(todos) == len(steps) - 1
     assert len({todo["id"] for todo in todos}) == len(todos)
     assert all(todo["step_id"] != "document-deadline" for todo in todos)
+
+
+def test_undated_todo_can_be_saved_as_draft_but_must_be_dated_before_registration(saved_document):
+    client, _, doc_id, steps = saved_document
+    steps[0]["date"] = ""
+    draft = put(client, doc_id, steps).json()["plan"]
+    assert put(client, doc_id, steps, draft["revision"], register=True).status_code == 422
+    assert client.get(f"/api/documents/{doc_id}").json()["plan"] == draft
+    assert client.get("/api/todos", params={"document_id": doc_id}).json() == []
+    steps[0]["date"] = "2070-09-24"
+    assert put(client, doc_id, steps, draft["revision"], register=True).status_code == 200
+
+
+def test_registered_todo_crud_keeps_origin_and_one_projection(saved_document):
+    client, _, doc_id, steps = saved_document
+    plan_url = f"/api/documents/{doc_id}"
+    add_url = f"{plan_url}/todos"
+    payload = {"title": "직접 추가한 할 일", "step_id": "custom-step-test"}
+    assert client.post(add_url, json=payload).status_code == 422
+    assert put(client, doc_id, steps, register=True).status_code == 200
+    response = client.post(add_url, json=payload)
+    assert response.status_code == 201
+    todos = response.json()["todos"]
+    created = next(todo for todo in todos if todo["origin"] == "user")
+    assert created["date"] == "2070-09-25"
+    assert client.post(add_url, json=payload).json()["todos"] == todos
+    assert all(todo["origin"] == "ai" for todo in todos if todo["id"] != created["id"])
+
+    item_url = f'/api/todos/{created["id"]}'
+    assert client.patch(item_url, json={"title": "날짜를 옮긴 할 일", "date": "2070-09-24"}).status_code == 200
+    updated = next(todo for todo in client.get("/api/todos", params={"document_id": doc_id}).json()
+                   if todo["id"] == created["id"])
+    assert (updated["title"], updated["date"], updated["origin"]) == ("날짜를 옮긴 할 일", "2070-09-24", "user")
+    assert client.delete(item_url).status_code == 200
+    assert all(todo["id"] != created["id"] for todo in client.get("/api/todos", params={"document_id": doc_id}).json())
+    assert all(step["id"] != created["step_id"] for step in client.get(plan_url).json()["plan"]["steps"])
 
 
 def test_existing_document_todos_are_replaced_by_registered_plan(saved_document):

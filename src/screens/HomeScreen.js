@@ -14,17 +14,18 @@ import Badge from "../components/Badge";
 import ProgressBar from "../components/ProgressBar";
 import DocumentEditModal from "../components/DocumentEditModal";
 import EmptyStart from "../components/EmptyStart";
+import useReducedMotion from "../hooks/useReducedMotion";
 import { colors, spacing, type, radius, glass } from "../theme/theme";
 import { listDocuments, getDocument, listTodos, updateTodo, updateDocument, deleteDocument, } from "../services/api";
-import { localPlanDate } from "../utils/preparationPlan";
 import { upcomingDocuments, ddayLabel, planProgress } from "../utils/homeData";
 import { ddayTone } from "../utils/dday";
 import { DOCUMENT_FILTERS, documentCounts, documentStatus, matchesQuery } from "../utils/documentList";
+import { groupHomeTodos } from "../utils/todoList";
 
 const todayLabel = () => {
   const days = ["일", "월", "화", "수", "목", "금", "토"];
   const now = new Date();
-  return `${now.getMonth() + 1}월 ${now.getDate()}일 (${days[now.getDay()]})`;
+  return `${now.getFullYear()}년 ${now.getMonth() + 1}월 ${now.getDate()}일 (${days[now.getDay()]})`;
 };
 
 export default function HomeScreen({ navigation, route }) {
@@ -32,6 +33,8 @@ export default function HomeScreen({ navigation, route }) {
   // 두 화면의 카드·문서 열기·수정·삭제 동작을 함께 유지한다.
   const isDocumentsScreen = route?.name === "Documents";
   const scroll = useRef(null);
+  const sectionOffsets = useRef({});
+  const reducedMotion = useReducedMotion();
   useScrollToTop(scroll);
   const [tab, setTab] = useState("today");
   const [tasks, setTasks] = useState([]);
@@ -64,11 +67,19 @@ export default function HomeScreen({ navigation, route }) {
       if (!active) return;
       setDocuments(docs);
       setHasLoaded(true);
-      setTasks(todos.filter((item) => item.date === localPlanDate()));
+      setTasks(todos);
     }).catch((e) => { if (active) setError(e.message); })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
   }, [reload, isDocumentsScreen]));
+
+  const scrollToSection = (key) => {
+    setTab(key);
+    requestAnimationFrame(() => {
+      const top = sectionOffsets.current[key];
+      if (top != null) scroll.current?.scrollTo({ y: Math.max(0, top - spacing.sm), animated: !reducedMotion });
+    });
+  };
 
   const toggleTask = async (item) => {
     if (busyTaskId) return;
@@ -209,6 +220,8 @@ export default function HomeScreen({ navigation, route }) {
     .filter((item) => docFilter === "all" || documentStatus(item) === docFilter);
   const noDocuments = !initialLoading && !error && documents.length === 0;
 
+  const taskGroups = groupHomeTodos(tasks, documents);
+  const taskCount = taskGroups.reduce((count, group) => count + group.todos.length, 0);
   const sortedUpcoming = upcomingDocuments(documents, sortBy);
   const previewUpcoming = upcomingDocuments(documents).slice(0, 3);
   const emptyLabel = initialLoading ? "불러오는 중…" : error ? "문서를 불러오지 못했어요."
@@ -279,7 +292,7 @@ export default function HomeScreen({ navigation, route }) {
 
   return (
     <ScreenSurface style={styles.safe} edges={["top"]}>
-      <AppHeader />
+      <AppHeader subtitle="오늘의 준비를 한눈에" />
 
       <ScrollView ref={scroll} style={styles.scroll} contentContainerStyle={styles.container}>
         {!!error && <Text accessibilityRole="alert" style={[type.small, { color: colors.alert, marginBottom: spacing.md }]}>{error}</Text>}
@@ -315,15 +328,12 @@ export default function HomeScreen({ navigation, route }) {
           </ScrollView>
           {renderDocumentCard(visibleDocuments)}
         </> : <>
-        <View style={styles.intro}>
-          <Text accessibilityRole="header" style={[styles.greeting, !wide && { fontSize: 28 }]}>오늘의 준비를 한눈에</Text>
-          <Text style={styles.date}>{todayLabel()}</Text>
-        </View>
+        <Text accessibilityRole="header" style={styles.date}>{todayLabel()}</Text>
         <View style={styles.stats}>
-          {[{ key: "today", label: "오늘 할 일", value: tasks.length, icon: "checkbox-outline" },
+          {[{ key: "today", label: "오늘 할 일", value: taskCount, icon: "checkbox-outline" },
             { key: "upcoming", label: "다가오는 마감", value: sortedUpcoming.length, icon: "calendar-outline" }].map((item) => (
             <Pressable key={item.key} accessibilityRole="button" accessibilityState={{ selected: tab === item.key }}
-              accessibilityLabel={`${item.label} ${item.value}개`} onPress={() => setTab(item.key)}
+              accessibilityLabel={`${item.label} ${item.value}개`} onPress={() => scrollToSection(item.key)}
               style={({ pressed }) => [styles.stat, !wide && { padding: 12, gap: 8 }, pressed && { opacity: 0.75 }]}>
               <GlassTint radius={22} />
               <View style={[styles.statIcon, !wide && { width: 36, height: 40 }]}><Ionicons name={item.icon} color={colors.stamp} size={26} /></View>
@@ -334,30 +344,44 @@ export default function HomeScreen({ navigation, route }) {
           ))}
         </View>
         <DocumentHero onPress={() => navigation.navigate("DocumentAdd")} />
-        <View style={styles.dashboard}>
-          <View style={{ minWidth: 0 }}>
-            <Text style={styles.sectionTitle}>오늘 할 일</Text>
-            <Card style={{ minHeight: 202 }}>
-              {tasks.length === 0 && <View style={styles.emptyToday}>
-                <View style={styles.emptyIcon}><Ionicons name="checkmark" size={30} color={colors.stamp} /></View>
-                <Text style={[type.body, { textAlign: "center" }]}>{initialLoading ? "불러오는 중…" : "오늘 등록된 할 일이 없어요"}</Text>
-                <Text style={[type.small, { textAlign: "center" }]}>다가오는 마감을 미리 확인해 보세요.</Text>
-              </View>}
-              {tasks.map((item, idx) => <Pressable key={item.id}
-                accessibilityRole="checkbox" accessibilityLabel={`${item.title} 완료`} aria-checked={!!item.is_completed}
-                disabled={!!busyTaskId} onPress={() => toggleTask(item)} style={[styles.taskRow, idx > 0 && styles.rowDivider]}>
-                <Ionicons name={item.is_completed ? "checkbox" : "square-outline"} size={22} color={item.is_completed ? colors.stamp : colors.muted} />
-                <View style={{ flex: 1, marginLeft: spacing.sm }}>
-                  <Text style={[type.bodyStrong, item.is_completed && styles.doneText]}>{item.title}</Text>
-                  <Text style={styles.taskSubtitle}>{item.doc_title}</Text>
+          <View style={styles.todaySection} onLayout={(event) => { sectionOffsets.current.today = event.nativeEvent.layout.y; }}>
+            <Text accessibilityRole="header" style={styles.sectionTitle}>오늘 할 일</Text>
+            {taskGroups.length === 0 ? (
+              <Card style={styles.emptyTaskCard}>
+                <View style={styles.emptyToday}>
+                  <View style={styles.emptyIcon}><Ionicons name="checkmark" size={30} color={colors.stamp} /></View>
+                  <Text style={[type.body, { textAlign: "center" }]}>{initialLoading ? "불러오는 중…" : "오늘 등록된 할 일이 없어요"}</Text>
+                  <Text style={[type.small, { textAlign: "center" }]}>다가오는 마감을 미리 확인해 보세요.</Text>
                 </View>
-                <Text style={styles.taskDday}>{ddayLabel(documents.find(d => d.id === item.document_id)?.dday)}</Text>
-              </Pressable>)}
-            </Card>
+              </Card>
+            ) : (
+              <View style={styles.taskGroups}>
+                {taskGroups.map((group) => (
+                  <Card key={group.key} style={styles.taskCard}>
+                    <View style={styles.taskDocumentHeader}>
+                      <Text accessibilityRole="header" style={styles.taskDocumentTitle}>{group.title}</Text>
+                      <Badge label={ddayLabel(group.dday)} tone={ddayTone(group.dday == null ? null : -group.dday)}
+                        style={styles.taskDdayBadge} />
+                    </View>
+                    {group.todos.map((item) => (
+                      <Pressable key={item.id} accessibilityRole="checkbox"
+                        accessibilityLabel={`${item.title}${item.overdue ? ", 지난 할 일" : ""} 완료`}
+                        aria-checked={!!item.is_completed} disabled={!!busyTaskId}
+                        onPress={() => toggleTask(item)} style={styles.taskRow}>
+                        <Ionicons name={item.is_completed ? "checkbox" : "square-outline"} size={22}
+                          color={item.is_completed ? colors.stamp : colors.muted} />
+                        <Text style={[styles.taskTitle, item.is_completed && styles.doneText]}>{item.title}</Text>
+                        {item.overdue && <View><Badge label="지난 할 일" tone="alert" /></View>}
+                      </Pressable>
+                    ))}
+                  </Card>
+                ))}
+              </View>
+            )}
           </View>
-          <View style={{ minWidth: 0 }}>
+          <View onLayout={(event) => { sectionOffsets.current.upcoming = event.nativeEvent.layout.y; }}>
             <View style={styles.sectionHeaderRow}>
-              <Text style={styles.sectionTitle}>다가오는 마감</Text>
+              <Text accessibilityRole="header" style={styles.sectionTitle}>다가오는 마감</Text>
               <Pressable accessibilityRole="button" onPress={() => setTab(tab === "upcoming" ? "today" : "upcoming")} hitSlop={8}>
                 <Text style={styles.seeAll}>{tab === "upcoming" ? "간략히 보기" : "전체 보기"} ›</Text>
               </Pressable>
@@ -369,7 +393,6 @@ export default function HomeScreen({ navigation, route }) {
             </Pressable>}
             {noDocuments ? <EmptyStart /> : renderDocumentCard(tab === "upcoming" ? sortedUpcoming : previewUpcoming)}
           </View>
-        </View>
         </>}
 
       </ScrollView>
@@ -455,15 +478,14 @@ export default function HomeScreen({ navigation, route }) {
 }
 
 const styles = StyleSheet.create({
-  intro: { marginTop: 12, marginBottom: 24 },
-  greeting: { ...type.display, fontSize: 36, letterSpacing: -1.2 },
-  date: { ...type.bodyStrong, color: colors.muted, marginTop: 10 },
+  date: { ...type.display, fontSize: 24, lineHeight: 30, marginTop: spacing.sm, marginBottom: spacing.lg },
   stats: { flexDirection: "row", gap: 14, marginBottom: 24 },
   stat: { ...glass, flex: 1, borderRadius: 22, padding: 18, flexDirection: "row", alignItems: "center", gap: 12 },
   statIcon: { width: 44, height: 44, borderRadius: 14, backgroundColor: colors.stampSoft, alignItems: "center", justifyContent: "center" },
   statLabel: { ...type.small, color: colors.ink },
   statValue: { ...type.display, marginTop: 4 },
-  dashboard: { gap: 24 },
+  todaySection: { marginBottom: spacing.xl },
+  emptyTaskCard: { minHeight: 202 },
   emptyToday: { alignItems: "center", justifyContent: "center", flex: 1, paddingVertical: 12, gap: 12 },
   emptyIcon: { width: 56, height: 56, backgroundColor: colors.stampSoft, borderRadius: 18, alignItems: "center", justifyContent: "center" },
   safe: { flex: 1, backgroundColor: colors.paper },
@@ -536,15 +558,15 @@ const styles = StyleSheet.create({
   },
   sortToggleText: { fontSize: 13, color: colors.muted, fontWeight: "600" },
 
-  taskRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingVertical: spacing.sm,
-  },
-  taskSubtitle: { fontSize: 12, color: colors.muted, marginTop: 2 },
-  taskDday: { fontSize: 15, fontWeight: "700", color: colors.alert },
+  taskGroups: { gap: spacing.md },
+  taskCard: { paddingVertical: spacing.md },
+  taskDocumentHeader: { flexDirection: "row", alignItems: "center", gap: spacing.sm, paddingBottom: spacing.md },
+  taskDocumentTitle: { ...type.h2, flexShrink: 1, lineHeight: 22 },
+  taskDdayBadge: { width: 44, height: 44, borderRadius: 8, paddingHorizontal: 0, alignItems: "center", alignSelf: "center", flexShrink: 0 },
+  taskRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm, paddingVertical: spacing.sm,
+    borderTopWidth: 1, borderTopColor: colors.line },
+  taskTitle: { ...type.bodyStrong, flex: 1, lineHeight: 20 },
   doneText: { color: colors.muted, textDecorationLine: "line-through" },
-  rowDivider: { borderTopWidth: 1, borderTopColor: colors.line },
 
   upcomingRow: {
     flexDirection: "row",
