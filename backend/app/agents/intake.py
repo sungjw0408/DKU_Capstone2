@@ -68,6 +68,43 @@ def from_image(data: bytes, mime_type: str, llm: LLMProvider) -> SourceDocument:
     return _finalize("image", llm.transcribe(data, mime_type))
 
 
+def from_images(
+    images: list[tuple[bytes, str]],
+    llm: LLMProvider,
+) -> SourceDocument:
+    """여러 장의 이미지를 페이지 순서대로 하나의 문서로 통합한다."""
+
+    if not images:
+        raise IntakeError("분석할 사진이 없습니다.")
+
+    pages = []
+    image_lines_by_page = []
+    masked_count = 0
+
+    for data, mime_type in images:
+        # 기존 사진 한 장 분석 함수 재사용
+        photo_source = from_image(data, mime_type, llm)
+
+        # 사진 한 장을 문서의 한 페이지로 처리
+        pages.append("\n".join(photo_source.pages))
+
+        # 사진별 텍스트 위치 정보 보관
+        image_lines_by_page.append(photo_source._image_lines)
+
+        # 개인정보 마스킹 횟수 합산
+        masked_count += photo_source.masked_count
+
+    # 여러 사진을 하나의 문서 객체로 생성
+    source = SourceDocument(
+        source_kind="image",
+        pages=pages,
+        masked_count=masked_count,
+    )
+
+    source._image_lines_by_page = image_lines_by_page
+
+    return source
+
 def from_upload(data: bytes, mime_type: str, filename: str, llm: LLMProvider) -> SourceDocument:
     name = filename.lower()
     if mime_type == "application/pdf" or name.endswith(".pdf"):
