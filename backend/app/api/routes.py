@@ -23,6 +23,7 @@ from app.utils.text import split_sentences
 
 router = APIRouter(prefix="/api")
 MAX_UPLOAD_BYTES = 15 * 1024 * 1024
+MAX_IMAGE_FILES = 5
 
 
 def user_store(uid: str = Depends(active_uid)):
@@ -136,6 +137,104 @@ def analyze_document(file: Optional[UploadFile] = File(None), text: Optional[str
         raise HTTPException(413, str(exc)) from exc
     _save_original(doc_id, data, file, source, store)
     return _analyze_saved(doc_id, llm, store)
+
+
+@router.post("/documents/analyze-images")
+def analyze_images(
+    files: list[UploadFile] = File(...),
+    store=Depends(user_store),
+):
+    """여러 장의 사진을 하나의 공지로 분석한다."""
+
+    if not 2 <= len(files) <= MAX_IMAGE_FILES:
+        raise HTTPException(
+            422,
+            f"사진은 2장 이상 {MAX_IMAGE_FILES}장 이하로 올려주세요.",
+        )
+
+    images = []
+    total_bytes = 0
+
+    for file in files:
+        raw_mime = (file.content_type or "").lower()
+        filename = (file.filename or "").lower()
+
+        # 정상적인 이미지 MIME 또는 이미지 확장자 허용
+        # 확장자 추론은 MIME이 비어 있거나 octet-stream일 때만 수행
+        allowed_exts = (
+            ".jpg", ".jpeg", ".png",
+            ".webp", ".heic", ".heif",
+        )
+        supported = intake.SUPPORTED_IMAGE_TYPES
+
+        mime = image_mime(file)
+
+        valid = (
+            raw_mime in supported
+            or raw_mime == "image/jpg"
+            or (
+                raw_mime in ("", "application/octet-stream")
+                and filename.endswith(allowed_exts)
+            )
+        )
+
+        if not valid or mime not in supported:
+            raise HTTPException(
+                422,
+                f"지원하지 않는 이미지 형식입니다: {file.filename}",
+            )
+
+        # 전체 업로드 용량을 15MB 이하로 제한
+        remaining = MAX_UPLOAD_BYTES - total_bytes
+        data = file.file.read(remaining + 1)
+
+        if not data:
+            raise HTTPException(
+                422,
+                "빈 사진 파일은 업로드할 수 없습니다.",
+            )
+
+        total_bytes += len(data)
+
+        if total_bytes > MAX_UPLOAD_BYTES:
+            raise HTTPException(
+                413,
+                "전체 사진 용량은 15MB 이하이어야 합니다.",
+            )
+
+        images.append((data, mime))
+
+    llm = get_llm()
+
+    try:
+        # 3-1단계에서 작성한 함수 재사용
+        source = intake.from_images(images, llm)
+
+    except intake.IntakeError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+    except RuntimeError as exc:
+        raise HTTPException(501, str(exc)) from exc
+
+    except genai_errors.APIError as exc:
+        raise HTTPException(
+            503,
+            "사진에서 텍스트를 추출하지 못했습니다.",
+        ) from exc
+
+    # 모든 사진을 하나의 문서로 저장
+    doc_id = f"doc-{uuid.uuid4().hex}"
+    title = f"사진 공지 ({len(files)}페이지)"
+
+    try:
+        store.save_source(doc_id, source, title)
+
+    except ValueError as exc:
+        raise HTTPException(413, str(exc)) from exc
+
+    # 기존 분석 파이프라인 사용
+    return _analyze_saved(doc_id, llm, store)
+
 
 
 @router.post("/documents/{doc_id}/retry")
