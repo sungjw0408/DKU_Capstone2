@@ -255,6 +255,12 @@ def _img_meta_path(doc_id: str) -> Path | None:
         return None
     return _dir() / f"{doc_id}.image.json"
 
+def _images_meta_path(doc_id: str) -> Path | None:
+    """여러 장의 사진 정보를 저장하는 JSON 파일 경로."""
+    if not _SAFE_ID.fullmatch(doc_id):
+        return None
+    return _dir() / f"{doc_id}.images.json"
+
 
 def _image_size(data: bytes) -> tuple[int, int] | None:
     """PNG / JPEG / WebP 헤더에서 (가로, 세로)를 읽는다. Pillow 없이 동작."""
@@ -335,6 +341,71 @@ def save_image(doc_id: str, data: bytes, mime_type: str, lines: list[LLMLine] | 
     )
 
 
+def save_images(
+    doc_id: str,
+    images: list[tuple[bytes, str]],
+    lines_by_page: list[list[LLMLine] | None] | None = None,
+) -> None:
+    """여러 사진의 원본과 페이지별 텍스트 좌표를 저장한다."""
+
+    meta_path = _images_meta_path(doc_id)
+
+    if meta_path is None or not images:
+        return
+
+    if lines_by_page is None:
+        lines_by_page = [None] * len(images)
+
+    if len(lines_by_page) != len(images):
+        raise ValueError("사진 수와 위치 정보의 페이지 수가 다릅니다.")
+
+    pages = []
+
+    # 먼저 모든 사진의 형식과 크기를 확인
+    for page_no, ((data, mime), lines) in enumerate(
+        zip(images, lines_by_page),
+        start=1,
+    ):
+        size = _image_size(data)
+        ext = _IMG_EXT.get(mime)
+
+        # 지원하지 않는 이미지라면 원본 이미지 표시를 생략
+        if not size or not ext or min(size) <= 0:
+            return
+
+        width, height = size
+
+        if _exif_orientation(data) in (5, 6, 7, 8):
+            width, height = height, width
+
+        filename = f"{doc_id}.p{page_no}.{ext}"
+
+        pages.append({
+            "page": page_no,
+            "file": filename,
+            "mime": mime,
+            "width": width,
+            "height": height,
+            "lines": [
+                line.model_dump()
+                for line in (lines or [])
+            ],
+        })
+
+    # 모든 사진의 검사가 끝난 후 원본 파일 저장
+    for page, (data, _) in zip(pages, images):
+        (_dir() / page["file"]).write_bytes(data)
+
+    # 파일 저장을 마친 후 메타데이터 기록
+    meta_path.write_text(
+        json.dumps(
+            {"pages": pages},
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+
 def _img_meta(doc_id: str) -> dict | None:
     path = _img_meta_path(doc_id)
     if not path or not path.exists():
@@ -344,6 +415,24 @@ def _img_meta(doc_id: str) -> dict | None:
     except (OSError, ValueError):
         return None
 
+def _images_meta(doc_id: str) -> dict | None:
+    """저장된 다중 사진의 메타데이터를 읽는다."""
+
+    path = _images_meta_path(doc_id)
+
+    if not path or not path.exists():
+        return None
+
+    try:
+        meta = json.loads(path.read_text(encoding="utf-8"))
+
+        if not isinstance(meta.get("pages"), list):
+            return None
+
+        return meta
+
+    except (OSError, ValueError, AttributeError):
+        return None
 
 def _image_highlights(meta: dict, analysis: AnalysisResult) -> dict[str, dict]:
     """줄별 상자를 이어 붙인 문자열에서 근거 문장을 찾아, 걸친 줄마다 글자 비율만큼 박스를 만든다."""
@@ -388,29 +477,116 @@ def _image_highlights(meta: dict, analysis: AnalysisResult) -> dict[str, dict]:
 
 # ─────────────────────────── 공개 함수 (PDF / 이미지 공통) ───────────────────────────
 def page_layout(doc_id: str) -> dict | None:
-    """{pages: [{width, height}]} — 원본 이미지로 보여줄 수 없으면 None (프론트는 텍스트 보기)"""
+    """PDF, 단일 사진, 다중 사진의 페이지 크기를 반환한다."""
+
+    multiple = _images_meta(doc_id)
+
+    if multiple:
+        return {
+            "pages": [
+                {
+                    "width": page["width"],
+                    "height": page["height"],
+                }
+                for page in multiple["pages"]
+            ]
+        }
+
     meta = _img_meta(doc_id)
+
     if meta:
-        return {"pages": [{"width": meta["width"], "height": meta["height"]}]}
+        return {
+            "pages": [
+                {
+                    "width": meta["width"],
+                    "height": meta["height"],
+                }
+            ]
+        }
+
     return _pdf_layout(doc_id)
 
 
+
 def highlights(doc_id: str, analysis: AnalysisResult) -> dict[str, dict]:
-    """{fieldId: {page, rects: [[x, y, w, h], ...]}} — 원본 위에서 근거 문장 위치 (페이지 비율 좌표)"""
+    """원본 이미지에서 근거 문장의 위치를 계산한다."""
+
+    multiple = _images_meta(doc_id)
+
+    if multiple:
+        page_matches = [
+            _image_highlights(page, analysis)
+            for page in multiple["pages"]
+        ]
+
+        result = {}
+
+        for field in analysis.fields:
+            order = list(range(len(page_matches)))
+            preferred_page = field.evidence.page
+
+            if (
+                preferred_page is not None
+                and 1 <= preferred_page <= len(page_matches)
+            ):
+                order.remove(preferred_page - 1)
+                order.insert(0, preferred_page - 1)
+
+            for index in order:
+                match = page_matches[index].get(field.id)
+
+                if match:
+                    result[field.id] = {
+                        "page": index + 1,
+                        "rects": match["rects"],
+                    }
+                    break
+
+        return result
+
     meta = _img_meta(doc_id)
+
     if meta:
         return _image_highlights(meta, analysis)
+
     return _pdf_highlights(doc_id, analysis)
 
 
-def page_image(doc_id: str, page_no: int, width: int = 1000) -> tuple[bytes, str] | None:
-    """(이미지 바이트, MIME). 사진은 원본 그대로, PDF 는 PNG 로 렌더링."""
+
+def page_image(
+    doc_id: str,
+    page_no: int,
+    width: int = 1000,
+) -> tuple[bytes, str] | None:
+    """요청한 페이지의 원본 이미지를 반환한다."""
+
+    multiple = _images_meta(doc_id)
+
+    if multiple:
+        pages = multiple["pages"]
+
+        if not 1 <= page_no <= len(pages):
+            return None
+
+        page = pages[page_no - 1]
+
+        data = (_dir() / page["file"]).read_bytes()
+
+        return data, page["mime"]
+
     meta = _img_meta(doc_id)
+
     if meta:
         if page_no != 1:
             return None
-        return (_dir() / meta["file"]).read_bytes(), meta["mime"]
+
+        return (
+            (_dir() / meta["file"]).read_bytes(),
+            meta["mime"],
+        )
+
     png = render_png(doc_id, page_no, width)
+
     return (png, "image/png") if png else None
 
 

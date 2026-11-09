@@ -207,7 +207,6 @@ def analyze_images(
     llm = get_llm()
 
     try:
-        # 3-1단계에서 작성한 함수 재사용
         source = intake.from_images(images, llm)
 
     except intake.IntakeError as exc:
@@ -231,6 +230,17 @@ def analyze_images(
 
     except ValueError as exc:
         raise HTTPException(413, str(exc)) from exc
+
+    # 다중 사진 원본과 페이지별 위치 정보 저장
+    try:
+        originals.save_images(
+            _original_id(store, doc_id),
+            images,
+            source._image_lines_by_page,
+        )
+    except OSError:
+        # 원본 저장 실패 시 텍스트 원문으로 대체
+        pass
 
     # 기존 분석 파이프라인 사용
     return _analyze_saved(doc_id, llm, store)
