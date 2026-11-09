@@ -73,6 +73,8 @@ export default function DocumentAddScreen({ navigation }) {
   const [analyzing, setAnalyzing] = useState(false);
   const [stage, setStage] = useState(0);
   const [capturedPhoto, setCapturedPhoto] = useState(null);
+  const [photos, setPhotos] = useState([]);
+  const photoIdCounter = useRef(0);
   const [textMode, setTextMode] = useState(false);
   const [text, setText] = useState("");
   const [focused, setFocused] = useState(false);
@@ -103,6 +105,7 @@ export default function DocumentAddScreen({ navigation }) {
       const { documentId, view, analysis, sourceKind } = await task();
       setPendingDocumentId(null);
       setCapturedPhoto(null);
+      setPhotos([]);
       setTextMode(false);
       setText("");
       navigation.navigate("AIAnalysis", { documentId, view, analysis, preview: { ...preview, kind: sourceKind || preview?.kind } });
@@ -113,6 +116,34 @@ export default function DocumentAddScreen({ navigation }) {
       clearInterval(timer.current);
       setAnalyzing(false);
     }
+  };
+
+  const addPhotos = (assets) => {
+    if (!assets?.length) return;
+
+    const newPhotos = assets.map((asset) => ({
+      ...asset,
+      localId: `photo-${photoIdCounter.current++}`,
+    }));
+
+    setPhotos((current) => [...current, ...newPhotos]);
+  };
+
+  const movePhoto = (index, direction) => {
+    setPhotos((current) => {
+      const target = index + direction;
+
+      if (target < 0 || target >= current.length) {
+        return current;
+      }
+
+      const updated = [...current];
+
+      [updated[index], updated[target]] =
+        [updated[target], updated[index]];
+
+      return updated;
+    });
   };
 
   const pickCamera = async () => {
@@ -138,11 +169,23 @@ export default function DocumentAddScreen({ navigation }) {
 
   const pickLibrary = async () => {
     if (!IS_WEB) {
-      const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (!perm.granted) return showError("사진 접근 권한이 필요해요. 설정에서 허용해 주세요.");
+      const perm =
+        await ImagePicker.requestMediaLibraryPermissionsAsync();
+
+      if (!perm.granted) {
+        return showError("사진 접근 권한이 필요해요.");
+      }
     }
-    const r = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 0.8 });
-    if (!r.canceled) run(() => analyzeFile(r.assets[0]), { kind: "image", uri: r.assets[0].uri });
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsMultipleSelection: true,
+      quality: 0.8,
+    });
+
+    if (!result.canceled && result.assets?.length > 0) {
+      addPhotos(result.assets);
+    }
   };
 
   const pickPdf = async () => {
@@ -190,17 +233,12 @@ export default function DocumentAddScreen({ navigation }) {
           />
 
           <PrimaryButton
-            label="이 사진으로 분석하기"
+            label="사진 목록에 추가하기"
             tone="stamp"
-            onPress={() =>
-              run(
-                () => analyzeFile(capturedPhoto),
-                {
-                  kind: "image",
-                  uri: capturedPhoto.uri,
-                }
-              )
-            }
+            onPress={() => {
+              addPhotos([capturedPhoto]);
+              setCapturedPhoto(null);
+            }}
           />
 
           <View style={{ height: 12 }} />
@@ -224,6 +262,132 @@ export default function DocumentAddScreen({ navigation }) {
     );
   }
 
+    if (photos.length > 0) {
+      return (
+        <ScreenSurface style={styles.safe} edges={["top"]}>
+          <ScrollView contentContainerStyle={styles.container}>
+            <Text style={type.h1}>사진 순서 확인</Text>
+
+            <Text style={styles.subtitle}>
+              위에서부터 1페이지, 2페이지 순서로 분석됩니다.
+            </Text>
+
+            {photos.map((photo, index) => (
+              <View key={photo.localId} style={styles.photoRow}>
+                <Image
+                  source={{ uri: photo.uri }}
+                  style={styles.photoThumbnail}
+                  resizeMode="cover"
+                />
+
+                <View style={styles.photoInfo}>
+                  <Text style={styles.photoTitle}>
+                    {index + 1}페이지
+                  </Text>
+
+                  <View style={styles.photoActions}>
+                    <Pressable
+                      disabled={index === 0}
+                      onPress={() => movePhoto(index, -1)}
+                    >
+                      <Text
+                        style={[
+                          styles.photoActionText,
+                          index === 0 && { color: colors.muted },
+                        ]}
+                      >
+                        ↑ 앞으로
+                      </Text>
+                    </Pressable>
+
+                    <Pressable
+                      disabled={index === photos.length - 1}
+                      onPress={() => movePhoto(index, 1)}
+                    >
+                      <Text
+                        style={[
+                          styles.photoActionText,
+                          index === photos.length - 1 &&
+                            { color: colors.muted },
+                        ]}
+                      >
+                        ↓ 뒤로
+                      </Text>
+                    </Pressable>
+
+                    <Pressable
+                      onPress={() =>
+                        setPhotos((current) =>
+                          current.filter(
+                            (item) => item.localId !== photo.localId
+                          )
+                        )
+                      }
+                    >
+                      <Text style={{ color: colors.alert }}>
+                        삭제
+                      </Text>
+                    </Pressable>
+                  </View>
+                </View>
+              </View>
+            ))}
+
+            <View style={{ height: 12 }} />
+
+            <PrimaryButton
+              label="사진 촬영하여 추가"
+              tone="stamp"
+              onPress={pickCamera}
+            />
+
+            <View style={{ height: 12 }} />
+
+            <PrimaryButton
+              label="앨범에서 사진 추가"
+              onPress={pickLibrary}
+            />
+
+            <View style={{ height: 24 }} />
+
+            {photos.length === 1 ? (
+              <PrimaryButton
+                label="이 사진으로 분석하기"
+                tone="stamp"
+                onPress={() =>
+                  run(
+                    () => analyzeFile(photos[0]),
+                    {
+                      kind: "image",
+                      uri: photos[0].uri,
+                    }
+                  )
+                }
+              />
+            ) : (
+              <View style={styles.tipBox}>
+                <Text style={styles.tipText}>
+                  사진 {photos.length}장이 준비되었습니다.
+                  여러 장 통합 분석은 다음 단계에서
+                  백엔드와 연결한 뒤 사용할 수 있습니다.
+                </Text>
+              </View>
+            )}
+
+            <Pressable
+              onPress={() => setPhotos([])}
+              style={styles.backLink}
+            >
+              <Text style={styles.backLinkText}>
+                사진 목록 비우고 돌아가기
+              </Text>
+            </Pressable>
+          </ScrollView>
+        </ScreenSurface>
+      );
+    }
+
+  
     if (textMode) {
     const len = text.trim().length;
     const ready = len >= 10;
@@ -395,4 +559,47 @@ const styles = StyleSheet.create({
   tipText: { flex: 1, fontSize: 13, lineHeight: 19, color: colors.ink },
   backLink: { alignItems: "center", paddingVertical: spacing.md },
   backLinkText: { fontSize: 14, fontWeight: "600", color: colors.muted, textDecorationLine: "underline" },
+  
+  photoRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 12,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: colors.line,
+    borderRadius: 14,
+    marginBottom: 12,
+  },
+
+  photoThumbnail: {
+    width: 80,
+    height: 105,
+    borderRadius: 8,
+    backgroundColor: "#F0F0F0",
+  },
+
+  photoInfo: {
+    flex: 1,
+    marginLeft: 12,
+    justifyContent: "center",
+    gap: 16,
+  },
+
+  photoTitle: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: colors.ink,
+  },
+
+  photoActions: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 12,
+    alignItems: "center",
+  },
+
+  photoActionText: {
+    fontSize: 13,
+    color: colors.stamp,
+  },
 });
