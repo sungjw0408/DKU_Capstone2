@@ -76,6 +76,58 @@ export async function analyzeFile(asset) {
   return request("/api/documents/analyze", { method: "POST", body: form });
 }
 
+
+export async function analyzeImages(assets) {
+  if (!Array.isArray(assets) || assets.length < 2 || assets.length > 5) {
+    throw new Error("사진은 2장 이상 5장 이하로 선택해주세요.");
+  }
+
+  const form = new FormData();
+
+  for (let i = 0; i < assets.length; i++) {
+    const asset = assets[i];
+
+    const type = asset.mimeType ?? asset.file?.type ?? "image/jpeg";
+
+    const ext =
+      type === "image/png" ? "png" :
+      type === "image/webp" ? "webp" :
+      type === "image/heic" ? "heic" :
+      type === "image/heif" ? "heif" : "jpg";
+
+    const name =
+      asset.fileName ??
+      asset.name ??
+      asset.file?.name ??
+      `page-${i + 1}.${ext}`;
+
+    if (Platform.OS === "web") {
+      const blob =
+        asset.file ?? (await (await fetch(asset.uri)).blob());
+
+      form.append("files", blob, name);
+    } else {
+      form.append("files", {
+        uri: asset.uri,
+        name,
+        type,
+      });
+    }
+  }
+
+  return request(
+    "/api/documents/analyze-images",
+    {
+      method: "POST",
+      body: form,
+    },
+    {
+      timeoutMs: 300000,
+    }
+  );
+}
+
+
 export const listDocuments = () => request("/api/documents");
 export const getDocument = (id) => request(`/api/documents/${id}`);
 export const updateDocument = (id, patch) =>
