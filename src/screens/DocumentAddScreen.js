@@ -4,7 +4,7 @@ import { pageContent } from "../theme/theme";
 import { Text, TextInput } from "../components/Typography";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useFocusEffect } from "@react-navigation/native";
-import { View, Pressable, StyleSheet, ActivityIndicator, Alert, Platform, KeyboardAvoidingView, ScrollView } from "react-native";
+import { View, Pressable, StyleSheet, ActivityIndicator, Alert, Platform, KeyboardAvoidingView, ScrollView, Image } from "react-native";
 import ScreenSurface from "../components/ScreenSurface";
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
@@ -72,6 +72,7 @@ function MethodRow({ m, onPress }) {
 export default function DocumentAddScreen({ navigation }) {
   const [analyzing, setAnalyzing] = useState(false);
   const [stage, setStage] = useState(0);
+  const [capturedPhoto, setCapturedPhoto] = useState(null);
   const [textMode, setTextMode] = useState(false);
   const [text, setText] = useState("");
   const [focused, setFocused] = useState(false);
@@ -101,6 +102,7 @@ export default function DocumentAddScreen({ navigation }) {
     try {
       const { documentId, view, analysis, sourceKind } = await task();
       setPendingDocumentId(null);
+      setCapturedPhoto(null);
       setTextMode(false);
       setText("");
       navigation.navigate("AIAnalysis", { documentId, view, analysis, preview: { ...preview, kind: sourceKind || preview?.kind } });
@@ -114,11 +116,24 @@ export default function DocumentAddScreen({ navigation }) {
   };
 
   const pickCamera = async () => {
-    if (IS_WEB) return showError("사진 촬영은 휴대폰 앱(Expo Go)에서만 사용할 수 있어요. 웹에서는 '앨범에서 선택'으로 사진 파일을 올려 주세요.");
+    if (IS_WEB) {
+      return showError("사진 촬영은 휴대폰 앱에서만 사용할 수 있어요.");
+    }
+
     const perm = await ImagePicker.requestCameraPermissionsAsync();
-    if (!perm.granted) return showError("카메라 권한이 필요해요. 설정에서 허용해 주세요.");
-    const r = await ImagePicker.launchCameraAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 0.8 });
-    if (!r.canceled) run(() => analyzeFile(r.assets[0]), { kind: "image", uri: r.assets[0].uri });
+
+    if (!perm.granted) {
+      return showError("카메라 권한이 필요해요.");
+    }
+
+    const result = await ImagePicker.launchCameraAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      quality: 0.8,
+    });
+
+    if (!result.canceled && result.assets?.length > 0) {
+      setCapturedPhoto(result.assets[0]);
+    }
   };
 
   const pickLibrary = async () => {
@@ -147,6 +162,64 @@ export default function DocumentAddScreen({ navigation }) {
       <ScreenSurface style={[styles.safe, styles.center]}>
         <ActivityIndicator size="large" color={colors.stamp} />
         <Text style={styles.analyzingText}>{stageList[stage]}</Text>
+      </ScreenSurface>
+    );
+  }
+
+  if (capturedPhoto) {
+    return (
+      <ScreenSurface style={styles.safe} edges={["top"]}>
+        <ScrollView contentContainerStyle={styles.container}>
+
+          <Text style={type.h1}>촬영한 사진 확인</Text>
+
+          <Text style={styles.subtitle}>
+            공지 내용이 잘 보이는지 확인해주세요.
+          </Text>
+
+          <Image
+            source={{ uri: capturedPhoto.uri }}
+            style={{
+              width: "100%",
+              height: 420,
+              borderRadius: 16,
+              backgroundColor: "#F0F0F0",
+              marginBottom: 20,
+            }}
+            resizeMode="contain"
+          />
+
+          <PrimaryButton
+            label="이 사진으로 분석하기"
+            tone="stamp"
+            onPress={() =>
+              run(
+                () => analyzeFile(capturedPhoto),
+                {
+                  kind: "image",
+                  uri: capturedPhoto.uri,
+                }
+              )
+            }
+          />
+
+          <View style={{ height: 12 }} />
+
+          <PrimaryButton
+            label="다시 찍기"
+            onPress={pickCamera}
+          />
+
+          <Pressable
+            onPress={() => setCapturedPhoto(null)}
+            style={styles.backLink}
+          >
+            <Text style={styles.backLinkText}>
+              취소하고 돌아가기
+            </Text>
+          </Pressable>
+
+        </ScrollView>
       </ScreenSurface>
     );
   }
