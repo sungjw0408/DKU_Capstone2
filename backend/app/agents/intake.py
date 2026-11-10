@@ -11,7 +11,7 @@ import io
 from pypdf import PdfReader
 
 from app.llm.base import LLMProvider
-from app.schemas import SourceDocument
+from app.schemas import PageSource, SourceDocument
 from app.utils.text import mask_pii
 
 SUPPORTED_IMAGE_TYPES = {"image/png", "image/jpeg", "image/webp", "image/heic", "image/heif"}
@@ -104,6 +104,67 @@ def from_images(
     source._image_lines_by_page = image_lines_by_page
 
     return source
+
+
+def from_body_and_attachments(
+    body: str,
+    attachments: list[tuple[bytes, str, str]],
+    llm: LLMProvider,
+) -> SourceDocument:
+    """공지 본문과 첨부 파일을 출처 정보와 함께 통합한다."""
+
+    if not body.strip():
+        raise IntakeError("공지 본문을 입력해주세요.")
+
+    if not attachments:
+        raise IntakeError("첨부 파일을 추가해주세요.")
+
+    body_source = from_text(body)
+
+    pages = list(body_source.pages)
+    page_sources = [
+        PageSource(
+            kind="body",
+            original_page=index,
+        )
+        for index in range(1, len(body_source.pages) + 1)
+    ]
+
+    masked_count = body_source.masked_count
+
+    for data, mime_type, filename in attachments:
+        name = filename.replace("\\", "/").split("/")[-1]
+
+        if not name.lower().endswith(".pdf"):
+            raise IntakeError(
+                f"현재 지원하지 않는 첨부 파일 형식입니다: {name}"
+            )
+
+        attachment_source = from_pdf(data, llm)
+
+        for index, page_text in enumerate(
+            attachment_source.pages,
+            start=1,
+        ):
+            pages.append(page_text)
+
+            page_sources.append(
+                PageSource(
+                    kind="attachment",
+                    filename=name,
+                    original_page=index,
+                )
+            )
+
+        masked_count += attachment_source.masked_count
+
+    return SourceDocument(
+        source_kind="text",
+        pages=pages,
+        masked_count=masked_count,
+        page_sources=page_sources,
+    )
+
 
 def from_upload(data: bytes, mime_type: str, filename: str, llm: LLMProvider) -> SourceDocument:
     name = filename.lower()

@@ -138,11 +138,16 @@ class LLMLine(BaseModel):
 class LLMTranscription(BaseModel):
     lines: list[LLMLine]
 
+class PageSource(BaseModel):
+    kind: Literal["body", "attachment"]
+    filename: Optional[str] = None
+    original_page: int
 
 class SourceDocument(BaseModel):
     source_kind: Literal["text", "pdf", "image"]
     pages: list[str]
     masked_count: int = 0
+    page_sources: list[PageSource] = Field(default_factory=list)
     # 이미지 받아쓰기 때 얻은 줄별 위치 (원문 근거 하이라이트용). DB에는 저장하지 않고 원본 파일 옆에 따로 둔다.
     _image_lines: Optional[list[LLMLine]] = PrivateAttr(default=None)
     _image_lines_by_page: Optional[list[Optional[list[LLMLine]]]] = PrivateAttr(default=None)
