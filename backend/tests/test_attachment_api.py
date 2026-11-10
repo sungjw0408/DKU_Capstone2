@@ -10,6 +10,11 @@ from app.config import get_settings
 from app.main import app
 from tests.conftest import SAMPLE
 
+from PIL import Image
+from app.api import routes
+from app.llm.mock import MockProvider
+from app.schemas import LLMLine
+
 
 def make_pdf():
     buffer = io.BytesIO()
@@ -66,12 +71,18 @@ def test_analyze_body_with_pdf_attachment(client):
     assert "fieldSources" in result["view"]
     doc_id = result["documentId"]
 
+    saved = client.get(f"/api/documents/{doc_id}")
+
+    assert saved.status_code == 200
+    assert saved.json()["view"]["fieldSources"] == result["view"]["fieldSources"]
+
     assert doc_id
     assert result["analysis"]["fields"]
 
     source_response = client.get(
         f"/api/documents/{doc_id}/source"
     )
+
 
     assert source_response.status_code == 200
 
@@ -126,3 +137,94 @@ def test_reject_empty_body(client):
     )
 
     assert response.status_code == 422
+
+
+class FakeMixedOCR(MockProvider):
+    def transcribe_lines(self, data, mime_type):
+        return [
+            LLMLine(
+                text="신청 마감: 2026년 11월 30일",
+                box_2d=[100, 100, 180, 900],
+            )
+        ]
+
+
+def test_mixed_attachments_api_and_original_pages(
+    client, monkeypatch
+):
+    monkeypatch.setattr(
+        routes,
+        "get_llm",
+        lambda: FakeMixedOCR(),
+    )
+
+    buffer = io.BytesIO()
+
+    Image.new("RGB", (200, 300), "white").save(
+        buffer,
+        format="PNG",
+    )
+
+    image_data = buffer.getvalue()
+
+    response = client.post(
+        "/api/documents/analyze-with-attachments",
+        data={"text": SAMPLE},
+        files=[
+            (
+                "files",
+                (
+                    "guide.pdf",
+                    make_pdf(),
+                    "application/pdf",
+                ),
+            ),
+            (
+                "files",
+                (
+                    "deadline.png",
+                    image_data,
+                    "image/png",
+                ),
+            ),
+        ],
+    )
+
+    assert response.status_code == 200, response.text
+
+    doc_id = response.json()["documentId"]
+
+    source_response = client.get(
+        f"/api/documents/{doc_id}/source"
+    )
+
+    assert source_response.status_code == 200
+
+    source = source_response.json()
+
+    assert len(source["pages"]) == 3
+    assert len(source["pageImages"]) == 3
+
+    assert source["pageImages"][0] is None
+    assert source["pageImages"][1] is not None
+    assert source["pageImages"][2] == {
+        "width": 200,
+        "height": 300,
+    }
+
+    body_page = client.get(
+        f"/api/documents/{doc_id}/pages/1/image"
+    )
+    assert body_page.status_code == 404
+
+    pdf_page = client.get(
+        f"/api/documents/{doc_id}/pages/2/image"
+    )
+    assert pdf_page.status_code == 200
+    assert pdf_page.content.startswith(b"\x89PNG")
+
+    image_page = client.get(
+        f"/api/documents/{doc_id}/pages/3/image"
+    )
+    assert image_page.status_code == 200
+    assert image_page.content == image_data

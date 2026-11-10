@@ -12,6 +12,7 @@ from PIL import Image
 
 from app.config import get_settings
 from app.services import originals
+from types import SimpleNamespace
 
 
 def make_pdf():
@@ -242,3 +243,75 @@ def test_mixed_attachment_original_pages(monkeypatch, tmp_path):
     originals.delete_originals(doc_id)
 
     assert not list(tmp_path.glob(f"{doc_id}*"))
+
+
+def test_mixed_attachment_highlights(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        get_settings(),
+        "originals_dir",
+        str(tmp_path),
+    )
+
+    image_buffer = io.BytesIO()
+    Image.new("RGB", (200, 300), "white").save(
+        image_buffer,
+        format="PNG",
+    )
+    image_data = image_buffer.getvalue()
+
+    pdf_text = "Required documents: application form and transcript"
+    image_text = "신청 마감: 2026년 11월 30일"
+
+    attachments = [
+        (make_pdf(), "application/pdf", "guide.pdf"),
+        (image_data, "image/png", "deadline.png"),
+    ]
+
+    source = intake.from_body_and_attachments(
+        "장학금 신청 안내",
+        attachments,
+        FakeAttachmentOCR(),
+    )
+
+    doc_id = "mixed-highlight-test"
+
+    originals.save_mixed_attachments(
+        doc_id,
+        attachments,
+        source,
+    )
+
+    def field(field_id, page, text):
+        return SimpleNamespace(
+            id=field_id,
+            evidence=SimpleNamespace(
+                page=page,
+                matched_text=text,
+                quote=text,
+            ),
+        )
+
+    analysis = SimpleNamespace(
+        fields=[
+            field("body-field", 1, "장학금 신청 안내"),
+            field("pdf-field", 2, pdf_text),
+            field("image-field", 3, image_text),
+        ]
+    )
+
+    highlights = originals.highlights(doc_id, analysis)
+
+    assert "body-field" not in highlights
+
+    assert highlights["pdf-field"]["page"] == 2
+    assert highlights["pdf-field"]["rects"]
+
+    assert highlights["image-field"]["page"] == 3
+    assert highlights["image-field"]["rects"]
+
+    for item in highlights.values():
+        for x, y, width, height in item["rects"]:
+            assert 0 <= x <= 1
+            assert 0 <= y <= 1
+            assert 0 < width <= 1
+            assert 0 < height <= 1

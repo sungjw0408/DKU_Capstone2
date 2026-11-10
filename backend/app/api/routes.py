@@ -24,6 +24,13 @@ from app.utils.text import split_sentences
 router = APIRouter(prefix="/api")
 MAX_UPLOAD_BYTES = 15 * 1024 * 1024
 MAX_IMAGE_FILES = 5
+ATTACHMENT_TYPES = {
+    ".pdf": "application/pdf",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".png": "image/png",
+    ".webp": "image/webp",
+}
 
 
 def user_store(uid: str = Depends(active_uid)):
@@ -280,11 +287,38 @@ def analyze_with_attachments(
     for file in files:
         filename = file.filename or ""
 
-        if not filename.lower().endswith(".pdf"):
+
+        extension = (
+            "." + filename.rsplit(".", 1)[-1].lower()
+            if "." in filename
+            else ""
+        )
+
+        mime_type = ATTACHMENT_TYPES.get(extension)
+
+        if mime_type is None:
             raise HTTPException(
                 422,
                 f"지원하지 않는 첨부 파일 형식입니다: {filename}",
             )
+
+        provided_mime = (file.content_type or "").lower()
+
+        allowed_mimes = {
+            "",
+            "application/octet-stream",
+            mime_type,
+        }
+
+        if mime_type == "image/jpeg":
+            allowed_mimes.add("image/jpg")
+
+        if provided_mime not in allowed_mimes:
+            raise HTTPException(
+                422,
+                f"파일 형식이 일치하지 않습니다: {filename}",
+            )
+
 
         remaining = MAX_UPLOAD_BYTES - total_bytes
         data = file.file.read(remaining + 1)
@@ -304,7 +338,7 @@ def analyze_with_attachments(
             )
 
         attachments.append(
-            (data, "application/pdf", filename)
+            (data, mime_type, filename)
         )
 
     llm = get_llm()
@@ -332,6 +366,15 @@ def analyze_with_attachments(
         store.save_source(doc_id, source, title)
     except ValueError as exc:
         raise HTTPException(413, str(exc)) from exc
+
+    try:
+        originals.save_mixed_attachments(
+            _original_id(store, doc_id),
+            attachments,
+            source,
+        )
+    except OSError:
+        pass
 
     return _analyze_saved(doc_id, llm, store)
 

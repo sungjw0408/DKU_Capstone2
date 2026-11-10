@@ -246,6 +246,46 @@ def _pdf_highlights(doc_id: str, analysis: AnalysisResult) -> dict[str, dict]:
     return result
 
 
+def _pdf_page_rects(
+    doc_id: str,
+    page_no: int,
+    text: str,
+) -> list[list[float]]:
+    needle = _SKIP.sub("", text or "")
+
+    if not needle or not has_pdf(doc_id):
+        return []
+
+    with _lock:
+        pdf = _open(doc_id)
+
+        try:
+            if not 1 <= page_no <= len(pdf):
+                return []
+
+            page = pdf[page_no - 1]
+            textpage, hay, indices = _page_chars(page)
+
+            span = _find_span(hay, needle)
+
+            if span is None:
+                return []
+
+            width, height = page.get_size()
+
+            return _boxes(
+                textpage,
+                indices,
+                span[0],
+                span[1],
+                width,
+                height,
+            )
+        finally:
+            pdf.close()
+
+
+
 # ─────────────────────────── 사진 / 이미지 ───────────────────────────
 _IMG_EXT = {"image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "image/heic": "heic", "image/heif": "heif"}
 
@@ -658,8 +698,57 @@ def page_layout(doc_id: str) -> dict | None:
 
 
 def highlights(doc_id: str, analysis: AnalysisResult) -> dict[str, dict]:
-    if _mixed_meta(doc_id) is not None:
-        return {}
+
+    mixed = _mixed_meta(doc_id)
+
+    if mixed is not None:
+        result = {}
+        pages = mixed["pages"]
+        image_cache = {}
+
+        for field in analysis.fields:
+            page_no = field.evidence.page
+
+            if page_no is None or not 1 <= page_no <= len(pages):
+                continue
+
+            if not field.evidence.matched_text:
+                continue
+
+            page_info = pages[page_no - 1]
+
+            if page_info is None:
+                continue
+
+            rects = []
+
+            if page_info["kind"] == "pdf":
+                rects = _pdf_page_rects(
+                    page_info["id"],
+                    page_info["original_page"],
+                    field.evidence.matched_text,
+                )
+
+            elif page_info["kind"] == "image":
+                if page_no not in image_cache:
+                    image_cache[page_no] = _image_highlights(
+                        page_info,
+                        analysis,
+                    )
+
+                match = image_cache[page_no].get(field.id)
+
+                if match:
+                    rects = match["rects"]
+
+            if rects:
+                result[field.id] = {
+                    "page": page_no,
+                    "rects": rects,
+                }
+
+        return result
+
     """원본 이미지에서 근거 문장의 위치를 계산한다."""
 
     multiple = _images_meta(doc_id)
