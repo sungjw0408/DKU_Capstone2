@@ -47,6 +47,11 @@ def _f(key, label, value, quote, page, conf, iso=None) -> LLMField:
 class MockProvider:
     name = "mock"
 
+    def draft_mail(self, kind: str, title: str, question: str) -> str:
+        if kind == "inquiry":
+            return f"안녕하세요. {title} 관련해 문의드립니다.\n\n{question}\n\n감사합니다."
+        return f"안녕하세요. {title}에 신청합니다."
+
     def transcribe(self, data: bytes, mime_type: str) -> list[str]:
         raise RuntimeError(
             "mock 모드에서는 이미지/스캔 PDF를 읽을 수 없습니다. 텍스트 PDF나 text 입력을 쓰거나 LLM_PROVIDER=gemini 로 바꾸세요."

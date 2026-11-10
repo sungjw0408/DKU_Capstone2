@@ -1,7 +1,7 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useState } from "react";
 import { useFocusEffect } from "@react-navigation/native";
 import { Text } from "../components/Typography";
-import { Alert, Linking, Platform, View, ScrollView, StyleSheet, Image, Pressable } from "react-native";
+import { View, ScrollView, StyleSheet, Image, Pressable } from "react-native";
 import ScreenSurface from "../components/ScreenSurface";
 import { Ionicons } from "@expo/vector-icons";
 import Card from "../components/Card";
@@ -11,9 +11,7 @@ import { colors, evidenceReviewColors, pageContent, spacing, type, radius } from
 import { analysisDetail as mockDetail } from "../data/mockData";
 import { getDocument } from "../services/api";
 import { splitAnalysisItems } from "../utils/evidenceReview";
-import { useAuth } from "../contexts/AuthContext";
 import { hasNoticeEligibility } from "../utils/noticeEligibility";
-import { contactEmails, gmailComposeUrl, signedInWithGoogle } from "../utils/noticeMail";
 
 function Thumbnail({ preview }) {
   if (preview?.kind === "image" && preview.uri) {
@@ -90,9 +88,8 @@ const SECTION_ICONS = {
   confirmed: "checkmark-circle",
 };
 
-function SectionRow({ section, isLast, onCompose }) {
+function SectionRow({ section, isLast }) {
   const multi = section.items.length > 1;
-  const usedAddresses = new Set();
   return (
     <View style={[styles.row, !isLast && styles.rowDivider]}>
       <View style={styles.rowHeader}>
@@ -104,30 +101,15 @@ function SectionRow({ section, isLast, onCompose }) {
         </View>
         <ConfidenceChip pct={section.confidence} />
       </View>
-      {section.items.map((it, i) => {
-        const addresses = onCompose ? contactEmails(it).filter((address) => !usedAddresses.has(address.toLowerCase())) : [];
-        addresses.forEach((address) => usedAddresses.add(address.toLowerCase()));
-        return (
-          <View key={it.fieldId ?? i} style={styles.itemLine}>
-            {multi && <View style={styles.bulletDot} />}
-            <View style={styles.itemContent}>
-              {addresses.length > 0 ? (
-                <View style={styles.contactLine}>
-                  <Text style={styles.itemText}>{it.text}</Text>
-                  {addresses.map((address) => (
-                    <Pressable key={address} accessibilityRole="button" accessibilityLabel={`${address}에 Gmail로 메일 쓰기`}
-                      onPress={() => onCompose(address)} hitSlop={6} style={styles.mailLink}>
-                      <Ionicons name="mail-outline" size={15} color={colors.stamp} />
-                      <Text style={[type.small, { color: colors.stamp }]}>{addresses.length === 1 ? "메일 쓰기" : `${address}에 메일 쓰기`}</Text>
-                    </Pressable>
-                  ))}
-                </View>
-              ) : <Text style={styles.itemText}>{it.text}</Text>}
-              {it.status === "user_confirmed" && <Badge label="사용자가 직접 확인한 문항" tone="green" />}
-            </View>
+      {section.items.map((it, i) => (
+        <View key={it.fieldId ?? i} style={styles.itemLine}>
+          {multi && <View style={styles.bulletDot} />}
+          <View style={styles.itemContent}>
+            <Text style={styles.itemText}>{it.text}</Text>
+            {it.status === "user_confirmed" && <Badge label="사용자가 직접 확인한 문항" tone="green" />}
           </View>
-        );
-      })}
+        </View>
+      ))}
     </View>
   );
 }
@@ -146,8 +128,6 @@ function legacySections(d) {
 }
 
 export default function AIAnalysisScreen({ navigation, route }) {
-  const { user } = useAuth();
-  const [googleSession, setGoogleSession] = useState(null);
   const initialParams = route.params ?? {};
   const documentId = initialParams.documentId;
   const [refreshed, setRefreshed] = useState(null);
@@ -178,22 +158,6 @@ export default function AIAnalysisScreen({ navigation, route }) {
   const hasIssues = reviewFields.length > 0;
   const hasUserConfirmed = normalSections.some((section) => section.items.some((item) => item.status === "user_confirmed"));
   const showAffiliation = !isMock && hasNoticeEligibility(fields);
-  const hasContactEmail = normalSections.some((section) => section.key === "contact"
-    && section.items.some((item) => contactEmails(item).length > 0));
-  useEffect(() => {
-    if (!hasContactEmail) return;
-    let active = true;
-    signedInWithGoogle(user).then((allowed) => {
-      if (active) setGoogleSession(allowed ? user : null);
-    }).catch(() => { if (active) setGoogleSession(null); });
-    return () => { active = false; };
-  }, [user, hasContactEmail]);
-
-  const composeMail = (address) => {
-    const url = gmailComposeUrl(address, d.title ?? d.docType ?? "공지 문의");
-    if (Platform.OS === "web") window.open(url, "_blank", "noopener,noreferrer");
-    else Linking.openURL(url).catch(() => Alert.alert("Gmail을 열지 못했어요", "잠시 후 다시 시도해 주세요."));
-  };
 
   // 나머지 경고 (경고 띠와 겹치는 문구는 뺌)
   const dday = ddayInfo(d.deadline?.datetime);
@@ -295,8 +259,7 @@ export default function AIAnalysisScreen({ navigation, route }) {
               <Text style={styles.itemText}>추출된 정보가 없어요. 원문을 확인해 주세요.</Text>
             )}
             {normalSections.map((s, i) => (
-              <SectionRow key={s.key} section={s} isLast={i === normalSections.length - 1}
-                onCompose={s.key === "contact" && user && googleSession === user ? composeMail : undefined} />
+              <SectionRow key={s.key} section={s} isLast={i === normalSections.length - 1} />
             ))}
           </Card>
         )}
@@ -376,8 +339,6 @@ const styles = StyleSheet.create({
   rowTitle: { fontSize: 16, fontWeight: "700", color: colors.ink },
   itemLine: { flexDirection: "row", gap: 8 },
   itemContent: { flex: 1, minWidth: 0, gap: spacing.xs },
-  contactLine: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: spacing.xs },
-  mailLink: { flexDirection: "row", alignItems: "center", gap: 4, paddingVertical: 4 },
   bulletDot: { width: 5, height: 5, borderRadius: 2.5, backgroundColor: colors.muted, marginTop: 8.5 },
   itemText: { flex: 1, fontSize: 15, lineHeight: 22, color: colors.ink },
   chip: { height: 22, paddingHorizontal: 8, borderRadius: radius.sm, justifyContent: "center" },
