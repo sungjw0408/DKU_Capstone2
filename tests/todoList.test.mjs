@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 const source = await readFile(new URL("../src/utils/todoList.js", import.meta.url), "utf8");
-const { groupTodos, todoDateLabel } =
+const { groupHomeTodos, groupTodos, todoDateLabel } =
   await import(`data:text/javascript;base64,${Buffer.from(source).toString("base64")}`);
 
 const today = new Date(2026, 9, 22); // 2026-10-22 (월은 0부터라 9 = 10월)
@@ -38,6 +38,23 @@ test("같은 날은 시각 순, 시각이 없으면 맨 뒤", () => {
 test("빈 목록도 처리한다", () => {
   const g = groupTodos(undefined, today);
   assert.equal(g.overdue.length + g.today.length + g.upcoming.length + g.undated.length + g.done.length, 0);
+});
+
+test("홈은 문서별로 오늘 할 일과 기한이 지난 미완료 할 일을 모은다", () => {
+  const documents = [{ id: "a", title: "같은 제목", dday: -2 }, { id: "b", title: "같은 제목", dday: 1 }];
+  const todos = [
+    { id: "today", document_id: "a", date: "2026-10-22", is_completed: true },
+    { id: "past", document_id: "a", date: "2026-10-20" },
+    { id: "past-done", document_id: "a", date: "2026-10-21", is_completed: true },
+    { id: "future", document_id: "a", date: "2026-10-23" },
+    { id: "undated", document_id: "a", date: "" },
+    { id: "other", document_id: "b", date: "2026-10-21" },
+  ];
+  const groups = groupHomeTodos(todos, documents, today);
+  assert.deepEqual(groups.map(({ key, dday }) => [key, dday]), [["a", -2], ["b", 1]]);
+  assert.deepEqual(groups[0].todos.map(({ id, overdue }) => [id, overdue]), [["past", true], ["today", false]]);
+  assert.deepEqual(groups[1].todos.map(({ id, overdue }) => [id, overdue]), [["other", true]]);
+  assert.equal(todos[1].overdue, undefined);
 });
 
 test("날짜 표시는 오늘·내일·어제를 말로 보여준다", () => {

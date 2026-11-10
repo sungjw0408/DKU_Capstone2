@@ -2,6 +2,7 @@ import { browserPopupRedirectResolver, GoogleAuthProvider, linkWithPopup, reauth
 import { auth } from "./firebaseAuth";
 
 export const googleSignInAvailable = true;
+export const googleSignInUnavailableReason = "";
 
 function provider() {
   const google = new GoogleAuthProvider();

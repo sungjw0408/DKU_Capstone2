@@ -6,10 +6,12 @@ import ScreenSurface from "../components/ScreenSurface";
 import { Ionicons } from "@expo/vector-icons";
 import Card from "../components/Card";
 import Badge from "../components/Badge";
+import NoticeAffiliation from "../components/NoticeAffiliation";
 import { colors, evidenceReviewColors, pageContent, spacing, type, radius } from "../theme/theme";
 import { analysisDetail as mockDetail } from "../data/mockData";
 import { getDocument } from "../services/api";
 import { splitAnalysisItems } from "../utils/evidenceReview";
+import { hasNoticeEligibility } from "../utils/noticeEligibility";
 
 function Thumbnail({ preview }) {
   if (preview?.kind === "image" && preview.uri) {
@@ -75,6 +77,7 @@ function ConfidenceChip({ pct }) {
 
 const SECTION_ICONS = {
   criteria: "person",
+  exclusions: "person-remove",
   period: "calendar",
   documents: "document-text",
   method: "send",
@@ -191,11 +194,13 @@ export default function AIAnalysisScreen({ navigation, route }) {
   const isMock = !params.view;
   const summary = d.summary ?? `${d.docType}로 판단했어요.`;
   const tags = d.tags ?? [d.docType];
+  const fields = params.analysis?.fields ?? [];
   const { reviewFields, normalSections } = splitAnalysisItems(
-    d.sections ?? legacySections(d), params.analysis?.fields ?? []
+    d.sections ?? legacySections(d), fields
   );
   const hasIssues = reviewFields.length > 0;
   const hasUserConfirmed = normalSections.some((section) => section.items.some((item) => item.status === "user_confirmed"));
+  const showAffiliation = !isMock && hasNoticeEligibility(fields);
 
   // 나머지 경고 (경고 띠와 겹치는 문구는 뺌)
   const dday = ddayInfo(d.deadline?.datetime);
@@ -295,9 +300,10 @@ export default function AIAnalysisScreen({ navigation, route }) {
           </View>
         )}
 
-        {(!hasIssues || normalSections.length > 0) && (
+        {(showAffiliation || !hasIssues || normalSections.length > 0) && (
           <Card style={styles.sectionsCard}>
-            {normalSections.length === 0 && (
+            {showAffiliation && <NoticeAffiliation fields={fields} style={[styles.row, normalSections.length > 0 && styles.rowDivider]} />}
+            {!hasIssues && normalSections.length === 0 && (
               <Text style={styles.itemText}>추출된 정보가 없어요. 원문을 확인해 주세요.</Text>
             )}
             {normalSections.map((s, i) => (

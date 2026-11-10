@@ -8,7 +8,7 @@ export function validateCredentials({ email, password, confirmation }, signingUp
 }
 
 export function authErrorMessage(error) {
-  if (["auth/popup-closed-by-user", "auth/cancelled-popup-request"].includes(error?.code)) return "";
+  if (["auth/popup-closed-by-user", "auth/cancelled-popup-request", "auth/google-cancelled"].includes(error?.code)) return "";
   const messages = {
     "auth/email-already-in-use": "이미 가입된 이메일이에요. 로그인해 주세요.",
     "auth/invalid-email": "이메일 주소를 확인해 주세요.",
@@ -29,6 +29,13 @@ export function authErrorMessage(error) {
     "auth/user-mismatch": "현재 로그인한 Google 계정을 선택해 주세요.",
     "auth/requires-recent-login": "본인 확인 시간이 지났어요. 다시 확인해 주세요.",
     "auth/invalid-oauth-client-id": "Google 로그인 설정을 확인해 주세요.",
+    "auth/google-configuration-missing": "Google 로그인 설정을 확인하지 못했어요. 이메일 또는 게스트로 시작해 주세요.",
+    "auth/google-native-unavailable": "현재 앱에서 Google 로그인을 사용할 수 없어요. 이메일 또는 게스트로 시작해 주세요.",
+    "auth/google-token-missing": "Google 본인 확인을 완료하지 못했어요. 다시 시도해 주세요.",
+    "auth/google-in-progress": "Google 로그인이 진행 중이에요. 잠시 기다려 주세요.",
+    "auth/google-play-services-unavailable": "Google Play 서비스를 사용할 수 없어요. 업데이트 후 다시 시도해 주세요.",
+    "auth/google-session-changed": "로그인 상태가 변경됐어요. 현재 화면에서 다시 시도해 주세요.",
+    "auth/google-guest-required": "게스트로 이용 중일 때 Google 계정을 연결할 수 있어요.",
   };
   return messages[error?.code] || (error?.code?.startsWith("auth/")
     ? "로그인 처리에 실패했어요. 잠시 후 다시 시도해 주세요."

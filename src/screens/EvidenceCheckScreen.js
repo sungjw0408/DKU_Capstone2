@@ -38,6 +38,7 @@ const GROUPS = [
   { key: "period", title: "신청 기간", keys: ["application_start", "deadline"] },
   { key: "documents", title: "제출 서류", keys: ["required_document"] },
   { key: "criteria", title: "신청 대상", keys: ["applicant_criteria"] },
+  { key: "exclusions", title: "신청 불가 대상", keys: ["applicant_exclusion"] },
   { key: "method", title: "제출 방법", keys: ["submission_method"] },
   { key: "announcement", title: "결과 발표", keys: ["announcement_date"] },
   { key: "event", title: "행사 일정", keys: ["event_date"] },

@@ -1,3 +1,5 @@
+import { requireOptionalNativeModule } from "expo";
+import AndroidDocumentCamera from "../components/AndroidDocumentCamera";
 
 import { glass } from "../theme/theme";
 import GlassTint from "../components/GlassTint";
@@ -86,6 +88,8 @@ export default function DocumentAddScreen({ navigation }) {
   const [capturedPhoto, setCapturedPhoto] = useState(null);
   const [photos, setPhotos] = useState([]);
   const photoIdCounter = useRef(0);
+  const [androidCamera, setAndroidCamera] = useState(null);
+  const cameraBusy = useRef(false);
   const [textMode, setTextMode] = useState(false);
   const [text, setText] = useState("");
   const [attachments, setAttachments] = useState([]);
@@ -94,6 +98,9 @@ export default function DocumentAddScreen({ navigation }) {
   const timer = useRef(null);
 
   useEffect(() => () => clearInterval(timer.current), []);
+  useFocusEffect(
+    useCallback(() => () => setAndroidCamera(null), [])
+  );
 
   const stages = (kind) => (kind === "image" ? IMAGE_STAGES : STAGES);
   const [stageList, setStageList] = useState(STAGES);
@@ -159,6 +166,20 @@ export default function DocumentAddScreen({ navigation }) {
     setPhotos((current) => [...current, ...newPhotos]);
   };
 
+  const useAndroidPhoto = (photo) => {
+    setAndroidCamera(null);
+
+    if (!photo?.uri) return;
+
+    addPhotos([
+      {
+        uri: photo.uri,
+        mimeType: "image/jpeg",
+        fileName: `camera-${Date.now()}.jpg`,
+      },
+    ]);
+  };
+
   const movePhoto = (index, direction) => {
     setPhotos((current) => {
       const target = index + direction;
@@ -176,26 +197,78 @@ export default function DocumentAddScreen({ navigation }) {
     });
   };
 
+
   const pickCamera = async () => {
     if (IS_WEB) {
-      return showError("사진 촬영은 휴대폰 앱에서만 사용할 수 있어요.");
+      return showError(
+        "사진 촬영은 휴대폰 앱에서만 사용할 수 있어요."
+      );
     }
 
-    const perm = await ImagePicker.requestCameraPermissionsAsync();
+    if (cameraBusy.current) return;
 
-    if (!perm.granted) {
-      return showError("카메라 권한이 필요해요.");
-    }
+    cameraBusy.current = true;
 
-    const result = await ImagePicker.launchCameraAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      quality: 0.8,
-    });
+    try {
+      if (Platform.OS === "android") {
+        // 기존 개발 빌드에 카메라 모듈이 없다면
+        // 다른 문서 추가 기능은 계속 사용할 수 있도록 한다.
+        if (!requireOptionalNativeModule("ExpoCamera")) {
+          Alert.alert(
+            "카메라를 사용할 수 없어요",
+            "새 Android 앱 빌드를 설치하거나 앨범에서 사진을 선택해 주세요."
+          );
+          return;
+        }
 
-    if (!result.canceled && result.assets?.length > 0) {
-      setCapturedPhoto(result.assets[0]);
+        const camera = require("expo-camera");
+
+        const permission =
+          await camera.Camera.requestCameraPermissionsAsync();
+
+        if (!permission.granted) {
+          Alert.alert(
+            "카메라 권한이 필요해요",
+            "설정에서 카메라 권한을 허용해 주세요."
+          );
+          return;
+        }
+
+        if (navigation.isFocused()) {
+          setAndroidCamera({
+            View: camera.CameraView,
+          });
+        }
+
+        return;
+      }
+
+      // Android 이외 환경에서는 기존 사진 촬영 흐름 유지
+      const permission =
+        await ImagePicker.requestCameraPermissionsAsync();
+
+      if (!permission.granted) {
+        return showError("카메라 권한이 필요해요.");
+      }
+
+      const result = await ImagePicker.launchCameraAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        quality: 0.8,
+      });
+
+      if (!result.canceled && result.assets?.length > 0) {
+        setCapturedPhoto(result.assets[0]);
+      }
+    } catch (error) {
+      Alert.alert(
+        "카메라를 열지 못했어요",
+        "다시 시도하거나 앨범에서 사진을 선택해 주세요."
+      );
+    } finally {
+      cameraBusy.current = false;
     }
   };
+
 
   const pickLibrary = async () => {
     if (!IS_WEB) {
@@ -399,6 +472,13 @@ export default function DocumentAddScreen({ navigation }) {
   if (photos.length > 0) {
     return (
       <ScreenSurface style={styles.safe} edges={["top"]}>
+        {androidCamera && (
+          <AndroidDocumentCamera
+            CameraView={androidCamera.View}
+            onClose={() => setAndroidCamera(null)}
+            onUsePhoto={useAndroidPhoto}
+          />
+        )}
         <ScrollView contentContainerStyle={styles.container}>
 
           <Text style={type.h1}>사진 순서 확인</Text>
@@ -767,6 +847,14 @@ export default function DocumentAddScreen({ navigation }) {
 
   return (
     <ScreenSurface style={styles.safe} edges={["top"]}>
+      {androidCamera && (
+        <AndroidDocumentCamera
+          CameraView={androidCamera.View}
+          onClose={() => setAndroidCamera(null)}
+          onUsePhoto={useAndroidPhoto}
+        />
+      )}
+
       <ScrollView contentContainerStyle={styles.container}>
 
         <Text style={type.h1}>문서 추가하기</Text>

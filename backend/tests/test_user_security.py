@@ -61,6 +61,7 @@ PROTECTED = [
     ("PATCH", "/api/documents/foreign", {"title": "changed"}), ("DELETE", "/api/documents/foreign", None),
     ("PUT", "/api/documents/foreign/plan", {"steps": [], "revision": 0}),
     ("POST", "/api/documents/foreign/plan/register", {"steps": [], "revision": 0}),
+    ("POST", "/api/documents/foreign/todos", {"title": "할 일"}),
     ("POST", "/api/documents/foreign/fields/f/confirm", {}), ("DELETE", "/api/documents/foreign/fields/f", None),
     ("GET", "/api/todos", None), ("PATCH", "/api/todos/foreign", {"is_completed": True}),
     ("DELETE", "/api/todos/foreign", None), ("DELETE", "/api/me/account", {"confirmed": True}),
@@ -91,6 +92,7 @@ def test_accounts_have_independent_lists_and_cannot_read_or_mutate_each_other(se
                 ("PATCH", f"/api/documents/{doc}", {"title": "stolen"}), ("DELETE", f"/api/documents/{doc}", None),
                 ("PUT", f"/api/documents/{doc}/plan", {"steps": before["plan"]["steps"], "revision": 1}),
                 ("POST", f"/api/documents/{doc}/plan/register", {"steps": before["plan"]["steps"], "revision": 1}),
+                ("POST", f"/api/documents/{doc}/todos", {"title": "stolen"}),
                 ("POST", f"/api/documents/{doc}/fields/{field}/confirm", {"value": "stolen"}),
                 ("DELETE", f"/api/documents/{doc}/fields/{field}", None)]
     for method, path, body in attempts:

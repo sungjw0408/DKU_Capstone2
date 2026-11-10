@@ -183,6 +183,14 @@ export async function analyzeImages(assets) {
 
 export const listDocuments = () => request("/api/documents");
 export const getDocument = (id) => request(`/api/documents/${id}`);
+export const getNoticeMailOptions = (id, user) => request(
+  "/api/documents/" + encodeURIComponent(id) + "/mail-options", {}, { user },
+);
+export const createNoticeMailDraft = (id, input, user) => request(
+  "/api/mail-drafts/" + encodeURIComponent(id),
+  { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input) },
+  { user, timeoutMessage: "메일 초안 작성이 지연되고 있어요. 잠시 후 다시 시도해 주세요." },
+);
 export const updateDocument = (id, patch) =>
   request(
     `/api/documents/${encodeURIComponent(id)}`,
@@ -211,6 +219,9 @@ export const registerPlan = (id, steps, revision) => request(`/api/documents/${e
   method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ steps, revision }),
 });
 export const listTodos = (documentId) => request(`/api/todos${documentId ? `?document_id=${encodeURIComponent(documentId)}` : ""}`);
+export const addTodo = (documentId, todo) => request(`/api/documents/${encodeURIComponent(documentId)}/todos`, {
+  method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(todo),
+});
 export const updateTodo = (id, completed) => request(`/api/todos/${encodeURIComponent(id)}`, {
   method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ is_completed: completed }),
 });

@@ -7,7 +7,7 @@ import { Text } from "../components/Typography";
 // - 맨 아래: 로그아웃, 회원 탈퇴
 import React, { useCallback, useState } from "react";
 import { useFocusEffect } from "@react-navigation/native";
-import { View, ScrollView, Pressable, StyleSheet, Switch } from "react-native";
+import { AppState, View, ScrollView, Pressable, StyleSheet, Switch } from "react-native";
 import ScreenSurface from "../components/ScreenSurface";
 import { Ionicons } from "@expo/vector-icons";
 import Constants from "expo-constants";
@@ -19,22 +19,24 @@ import { useAuth } from "../contexts/AuthContext";
 import { authErrorMessage } from "../utils/authForm";
 import { colors, radius, spacing, type } from "../theme/theme";
 import { backOrHome } from "../navigation/routes";
-import { REMINDER_HOURS, hourLabel } from "../utils/notificationPlan";
+import { REMINDER_HOUR, REMINDER_HOURS, REMINDER_OFFSETS, hourLabel, reminderOffsetLabel } from "../utils/notificationPlan";
 import { showOnboarding } from "../services/onboarding";
 import {
-  getReminderHour, isNotificationEnabled, notificationsSupported, openSystemSettings,
-  permissionStatus, setNotificationEnabled, setReminderHour,
+  getReminderHour, getReminderOffsets, isNotificationEnabled, notificationsSupported, openSystemSettings,
+  permissionStatus, setNotificationEnabled, setReminderHour, setReminderOffsets,
 } from "../services/notifications";
 
 const APP_VERSION = Constants.expoConfig?.version || "1.0.0";
 
-function noticeText(state, hour) {
+function noticeText(state, hour, offsets) {
   switch (state) {
     case "unsupported": return "웹에서는 알림을 보낼 수 없어요. 휴대폰 앱에서 켜 주세요.";
     case "blocked": return "휴대폰 설정에서 똑독 알림이 꺼져 있어요.";
     case "off": return "알림을 받지 않아요.";
-    case "pending": return "켜면 알림 권한을 물어봐요.";
-    default: return `마감 D-3, D-1, 당일과 할 일이 있는 날 ${hourLabel(hour)}에 알려 드려요.`;
+    case "pending": return "알림을 허용하면 선택한 마감일과 할 일이 있는 날에 알려 드려요.";
+    default: return offsets.length
+      ? `마감 ${offsets.map(reminderOffsetLabel).join("·")}과 할 일이 있는 날 ${hourLabel(hour)}에 알려 드려요.`
+      : `할 일이 있는 날 ${hourLabel(hour)}에만 알려 드려요.`;
   }
 }
 
@@ -45,34 +47,41 @@ export default function SettingsScreen({ navigation }) {
   const [deleting, setDeleting] = useState(false);
   const [confirmGuestLogout, setConfirmGuestLogout] = useState(false);
   const [notice, setNotice] = useState({ enabled: false, state: notificationsSupported ? "pending" : "unsupported" });
-  const [hour, setHour] = useState(9);
+  const [hour, setHour] = useState(REMINDER_HOUR);
+  const [offsets, setOffsets] = useState(REMINDER_OFFSETS);
   const [noticeBusy, setNoticeBusy] = useState(false);
+  const [noticeError, setNoticeError] = useState("");
 
   // 설정 탭에 올 때마다 알림 상태를 다시 확인 (휴대폰 설정에서 바꾸고 돌아와도 반영)
   const loadNotice = useCallback(async () => {
-    setHour(await getReminderHour());
+    const [savedHour, savedOffsets] = await Promise.all([getReminderHour(), getReminderOffsets()]);
+    setHour(savedHour);
+    setOffsets(savedOffsets);
     if (!notificationsSupported) return;
     const [enabled, permission] = await Promise.all([isNotificationEnabled(), permissionStatus()]);
-    const state = permission === "blocked" || permission === "denied" ? "blocked"
+    const state = permission === "blocked" ? "blocked"
       : !enabled ? "off" : permission === "granted" ? "on" : "pending";
     setNotice({ enabled: enabled && permission === "granted", state });
   }, []);
-  useFocusEffect(useCallback(() => { loadNotice(); }, [loadNotice]));
+  useFocusEffect(useCallback(() => {
+    const refresh = () => loadNotice().catch(() => setNoticeError("알림 설정을 불러오지 못했어요."));
+    refresh();
+    if (!notificationsSupported) return;
+    const subscription = AppState.addEventListener("change", (state) => { if (state === "active") refresh(); });
+    return () => subscription.remove();
+  }, [loadNotice]));
 
-  const toggleNotice = async (next) => {
+  const updateNotice = async (save) => {
     if (noticeBusy) return;
     setNoticeBusy(true);
-    try { await setNotificationEnabled(next); await loadNotice(); }
+    setNoticeError("");
+    try { await save(); await loadNotice(); }
+    catch { setNoticeError("알림 설정을 저장하지 못했어요. 다시 시도해 주세요."); }
     finally { setNoticeBusy(false); }
   };
-
-  const chooseHour = async (next) => {
-    if (noticeBusy || next === hour) return;
-    setHour(next);
-    setNoticeBusy(true);
-    try { await setReminderHour(next); }
-    finally { setNoticeBusy(false); }
-  };
+  const toggleOffset = (offset) => updateNotice(() => setReminderOffsets(
+    offsets.includes(offset) ? offsets.filter((value) => value !== offset) : [...offsets, offset],
+  ));
 
   const handleLogout = async () => {
     if (busy) return;
@@ -112,13 +121,20 @@ export default function SettingsScreen({ navigation }) {
                 <Ionicons name="notifications-outline" size={20} color={colors.ink} />
                 <View style={{ flex: 1 }}>
                   <Text style={type.bodyStrong}>마감 알림</Text>
-                  <Text style={type.small}>{noticeText(notice.state, hour)}</Text>
+                  <Text style={type.small}>{noticeText(notice.state, hour, offsets)}</Text>
                 </View>
-                {notificationsSupported && notice.state !== "blocked" && (
+                {notificationsSupported && ["on", "off"].includes(notice.state) && (
                   <Switch accessibilityLabel="마감 알림" value={notice.enabled} disabled={noticeBusy}
-                    onValueChange={toggleNotice} trackColor={{ true: colors.stamp, false: colors.line }} />
+                    onValueChange={(next) => updateNotice(() => setNotificationEnabled(next))}
+                    trackColor={{ true: colors.stamp, false: colors.line }} />
                 )}
               </View>
+              {notice.state === "pending" && (
+                <Pressable accessibilityRole="button" disabled={noticeBusy} style={styles.settingsLink}
+                  onPress={() => updateNotice(() => setNotificationEnabled(true))}>
+                  <Text style={[type.bodyStrong, { color: colors.stamp }]}>알림 허용하기</Text>
+                </Pressable>
+              )}
               {notice.state === "blocked" && (
                 <Pressable accessibilityRole="button" onPress={openSystemSettings} style={styles.settingsLink}>
                   <Text style={[type.bodyStrong, { color: colors.stamp }]}>휴대폰 설정 열기</Text>
@@ -136,7 +152,7 @@ export default function SettingsScreen({ navigation }) {
                     const on = h === hour;
                     return (
                       <Pressable key={h} accessibilityRole="button" accessibilityState={{ selected: on, disabled: hourDisabled }}
-                        disabled={hourDisabled || noticeBusy} onPress={() => chooseHour(h)}
+                        disabled={hourDisabled || noticeBusy} onPress={() => { if (h !== hour) updateNotice(() => setReminderHour(h)); }}
                         style={[styles.chip, on && styles.chipOn]}>
                         <Text style={[styles.chipText, on && styles.chipTextOn]}>{hourLabel(h)}</Text>
                       </Pressable>
@@ -144,6 +160,26 @@ export default function SettingsScreen({ navigation }) {
                   })}
                 </View>
               </View>
+              <View style={[styles.hourBlock, hourDisabled && styles.dim]}>
+                <View style={styles.row}>
+                  <Ionicons name="calendar-outline" size={20} color={colors.ink} />
+                  <Text style={type.bodyStrong}>마감 알림 시점</Text>
+                </View>
+                <View style={styles.chips}>
+                  {REMINDER_OFFSETS.map((offset) => {
+                    const selected = offsets.includes(offset);
+                    return (
+                      <Pressable key={offset} accessibilityRole="checkbox"
+                        accessibilityState={{ checked: selected, disabled: hourDisabled || noticeBusy }}
+                        disabled={hourDisabled || noticeBusy} onPress={() => toggleOffset(offset)}
+                        style={[styles.chip, selected && styles.chipOn]}>
+                        <Text style={[styles.chipText, selected && styles.chipTextOn]}>{reminderOffsetLabel(offset)}</Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              </View>
+              {!!noticeError && <Text accessibilityRole="alert" style={styles.error}>{noticeError}</Text>}
             </Card>
 
             {/* 앱 정보 */}

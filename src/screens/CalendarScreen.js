@@ -12,6 +12,7 @@ import Badge from "../components/Badge";
 import MonthCalendar, { CALENDAR_ACCENT } from "../components/MonthCalendar";
 import { colors, spacing, type } from "../theme/theme";
 import { listDocuments, listTodos, getDocument } from "../services/api";
+import { onDataChanged } from "../services/dataEvents";
 import { ddayLabel } from "../utils/homeData";
 import { buildCalendarEvents, monthDeadlineCount, dateKeyOf, dateLabel, parseDateKey } from "../utils/calendarData";
 import { ddayTone } from "../utils/dday";
@@ -28,6 +29,8 @@ export default function CalendarScreen({ navigation }) {
   const [error, setError] = useState("");
   const [openingId, setOpeningId] = useState(null);
   const [reload, setReload] = useState(0);
+
+  useFocusEffect(useCallback(() => onDataChanged(() => setReload((value) => value + 1)), []));
 
   // 화면에 들어올 때마다 최신 마감·할 일을 다시 불러온다 (계획 수정 후 돌아와도 반영)
   useFocusEffect(useCallback(() => {

@@ -35,6 +35,27 @@ def test_analyze_prose_notice():
     assert len(view["applicantCriteria"]) == 2
 
 
+def test_notice_keeps_applicant_exclusions_and_contact_email():
+    text = """장학금 신청 안내
+1. 신청 대상: SW융합대학 재학생
+2. 신청 불가 대상
+- 편입생
+- 컴퓨터공학과
+3. 문의처
+scholarship+sw@example.edu
+"""
+    r = client.post("/api/documents/analyze", data={"text": text})
+    assert r.status_code == 200
+    result = r.json()
+    sections = {s["key"]: s["items"] for s in result["view"]["sections"]}
+    assert [item["text"] for item in sections["criteria"]] == ["SW융합대학 재학생"]
+    assert [item["text"] for item in sections["exclusions"]] == ["편입생", "컴퓨터공학과"]
+    assert [item["text"] for item in sections["contact"]] == ["scholarship+sw@example.edu"]
+    assert all(item["status"] == "verified" for item in sections["exclusions"] + sections["contact"])
+    stored = client.get(f"/api/documents/{result['documentId']}").json()
+    assert stored["view"]["sections"] == result["view"]["sections"]
+
+
 def test_analyze_txt_upload_and_fetch_and_confirm():
     r = client.post("/api/documents/analyze",
                     files={"file": ("notice.txt", SAMPLE.encode(), "text/plain")})

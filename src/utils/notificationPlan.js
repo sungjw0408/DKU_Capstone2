@@ -7,6 +7,7 @@
 // - 할 일을 모두 끝낸 문서, 지운 문서, 완료한 할 일, 이미 지난 시각은 알리지 않음
 // - iOS는 예약 알림을 64개까지만 보관해서, 가까운 순으로 60개까지만 예약
 export const REMINDER_HOUR = 9;
+export const REMINDER_OFFSETS = [3, 1, 0];
 // 설정 화면에서 고를 수 있는 알림 시각
 export const REMINDER_HOURS = [7, 8, 9, 12, 18, 21];
 export const MAX_SCHEDULED = 60;
@@ -29,7 +30,9 @@ function addDays(date, days) {
 const timeOf = (deadline) => (String(deadline || "").split("T")[1] || "").slice(0, 5);
 const isDone = (doc) => !!doc?.registered && (doc.progress || 0) >= 1;
 
-export function buildNotificationPlan(documents, todos, now = new Date(), { hour = REMINDER_HOUR } = {}) {
+export function buildNotificationPlan(documents, todos, now = new Date(), {
+  hour = REMINDER_HOUR, offsets = REMINDER_OFFSETS,
+} = {}) {
   const items = [];
   const activeIds = new Set();
 
@@ -40,7 +43,7 @@ export function buildNotificationPlan(documents, todos, now = new Date(), { hour
     if (!day) continue;
     const time = timeOf(doc.deadline);
     const when = `${day.getMonth() + 1}월 ${day.getDate()}일${time ? ` ${time}` : ""}`;
-    for (const offset of [3, 1, 0]) {
+    for (const offset of REMINDER_OFFSETS.filter((value) => offsets.includes(value))) {
       const date = addDays(day, -offset);
       if (date <= now) continue;
       items.push({
@@ -78,7 +81,7 @@ export function buildNotificationPlan(documents, todos, now = new Date(), { hour
         ? `${first.doc_title || "준비 계획"}${first.time ? ` · ${first.time}` : ""}`
         : list.slice(0, 3).map((t) => `· ${t.title}`).join("\n") + (list.length > 3 ? `\n외 ${list.length - 3}개` : ""),
       data: single
-        ? { kind: "todo", documentId: first.document_id, documentTitle: first.doc_title }
+        ? { kind: "todo", documentId: first.document_id, documentTitle: first.doc_title, todoId: first.id }
         : { kind: "todo" },
     });
   }
@@ -89,7 +92,11 @@ export function buildNotificationPlan(documents, todos, now = new Date(), { hour
 
 // 예약 내용이 그대로면 다시 예약하지 않으려고 비교하는 값
 export function planSignature(items) {
-  return (items || []).map((i) => `${i.id}@${i.date.getTime()}|${i.title}|${i.body}`).join("\n");
+  return JSON.stringify((items || []).map(({ id, date, title, body, data }) => [id, date.getTime(), title, body, data]));
+}
+
+export function reminderOffsetLabel(offset) {
+  return offset === 0 ? "당일" : `D-${offset}`;
 }
 
 // 9 → "오전 9시", 18 → "오후 6시", 12 → "낮 12시"

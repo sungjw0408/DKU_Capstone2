@@ -22,6 +22,7 @@ class DocCategory(str, Enum):
 
 class FieldKey(str, Enum):
     APPLICANT_CRITERIA = "applicant_criteria"  # 신청 대상 / 자격 요건
+    APPLICANT_EXCLUSION = "applicant_exclusion"  # 신청 불가 대상 / 제외 조건
     APPLICATION_START = "application_start"  # 신청(접수) 시작일
     DEADLINE = "deadline"  # 신청(제출) 마감일
     ANNOUNCEMENT_DATE = "announcement_date"  # 결과 발표일

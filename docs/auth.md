@@ -11,7 +11,7 @@ Firebase Authentication이 이메일/비밀번호 계정을 관리한다. 비밀
 - 로그인·프로필 조회가 끝나면 기존 홈 화면으로 이동한다. 가입 시 단과대·학과를 선택한다. 단과대 변경 시 학과가 초기화된다.
 - 계정 생성 후 프로필 저장이 실패하면 계정을 유지하고 소속 저장 화면에서 재시도한다. 소속 없는 계정은 재실행해도 이 화면으로 이동한다.
 - 홈의 세 줄 메뉴는 오른쪽 사이드바를 연다. 로그아웃은 로그인 화면으로 이동한다. 회원 탈퇴는 삭제 안내와 현재 비밀번호 확인 화면을 연다.
-- 기존 화면의 디자인을 유지한다. 마이페이지 본문, 모바일 Google 로그인, 소속 기반 신청 대상 판정은 포함하지 않는다.
+- 기존 화면의 디자인을 유지한다. 마이페이지 본문, 소속 기반 신청 대상 판정은 포함하지 않는다. 이후 추가한 모바일 Google 인증은 [별도 안내](native-google-auth.md)를 따른다.
 - 로그인 화면의 회원가입 링크 아래에 Google 로고와 **Google 계정으로 시작하기** 버튼을 표시한다. 요청에 따라 버튼 높이는 40, 글자는 13, 로고는 18로 줄이고 테두리를 제거했다. `assets/google-g.png`는 [Google 공식 로고 이미지](https://developers.google.com/static/identity/images/g-logo.png)다.
 
 ## Google 로그인 — 웹
@@ -33,7 +33,7 @@ Firebase Authentication이 이메일/비밀번호 계정을 관리한다. 비밀
 - 프로필 조회나 저장이 실패해도 Google 계정을 다시 만들지 않고 기존 소속 저장·재조회 화면에서 복구한다. 같은 이메일의 다른 인증 방식과 충돌하면 기존 방식으로 로그인하도록 안내하며 데이터를 임의로 합치지 않는다.
 - Google 계정이 연결된 회원은 탈퇴할 때 Google 팝업으로 다시 본인 확인한다. 다른 Google 계정을 선택하면 Firebase가 거부하며, 확인 성공 후 갱신된 ID 토큰으로 기존 탈퇴 API를 호출한다. 서버의 최근 5분 재인증 요구를 유지한다.
 - 이메일·비밀번호 회원과 게스트의 기존 로그인·탈퇴 처리는 유지한다. 게스트의 Google 계정 전환은 아래 별도 흐름으로 처리한다.
-- Android/iOS에는 웹 전용 팝업 코드를 포함하지 않도록 플랫폼 파일을 분리했다. 모바일 Google 버튼은 비활성이며 이메일·게스트는 계속 사용할 수 있다. 모바일 Google 인증은 앱별 OAuth 등록과 개발 빌드를 갖춘 뒤 별도 구현한다.
+- Android/iOS에는 웹 전용 팝업 코드를 포함하지 않도록 플랫폼 파일을 분리했다. 이후 네이티브 credential 인증을 추가했다. 모바일 버튼은 SDK와 플랫폼별 OAuth 설정이 갖춰진 개발 빌드에서 활성화되며, Expo Go에서는 이메일·게스트를 계속 사용한다. 앱 등록·서명 및 실행 절차는 [모바일 Google 인증](native-google-auth.md)을 참고한다.
 
 참고: [Firebase Google 로그인](https://firebase.google.com/docs/auth/web/google-signin), [Expo 모바일 Google 인증](https://docs.expo.dev/guides/google-authentication/).
 
@@ -61,7 +61,7 @@ Google 연동 시 개발 도구로는 수정한 프런트 7개 파일과 백엔�
 - 소속 선택 전에 새로고침하거나 로그아웃해도 이후 Google 로그인으로 같은 UID를 복원하고 소속 선택을 이어갈 수 있다. Google 연결 성공 후 프로필 조회가 실패해도 연결된 계정을 유지하고 소속 재조회·저장을 제공한다.
 - 팝업 취소 시 게스트를 유지한다. 이미 다른 Firebase UID에 가입된 Google 계정을 선택하면 연결을 거부하고 다른 계정을 선택하도록 안내한다. 기존 회원과 게스트의 데이터를 임의로 합치거나 기존 계정으로 자동 로그인하지 않는다.
 - 연결 중에는 메뉴 닫기·로그아웃·삭제·중복 연결 버튼을 비활성화한다. 삭제 진행 상태에서는 연결을 시작할 수 없다. 연결을 완료한 계정의 탈퇴에는 기존 Google 재인증을 사용한다.
-- 현재 웹에서만 제공한다. Android/iOS의 이메일·게스트 기능은 유지하고 모바일 Google 연결은 별도 구현 범위로 둔다.
+- 최초 구현은 웹에서 제공했다. 이후 Android/iOS에도 같은 UID를 유지하는 credential 연결을 추가했다. 모바일 앱 등록·실기기 검증 상태는 [모바일 Google 인증](native-google-auth.md)을 참고한다.
 
 변경 파일: `src/components/GoogleAccountButton.js`, `src/components/AccountSidebar.js`, `src/screens/AuthScreens.js`, `src/contexts/AuthContext.js`, `src/navigation/AuthGate.js`, `src/services/auth.js`, `src/services/googleAuth.web.js`, `src/services/googleAuth.native.js`, `src/utils/authForm.js`, `docs/auth.md`. 백엔드·DB 경로·보안 규칙은 변경하지 않는다.
 

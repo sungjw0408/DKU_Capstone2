@@ -10,6 +10,8 @@ import { Ionicons } from "@expo/vector-icons";
 import Card from "../components/Card";
 import { colors, spacing, type } from "../theme/theme";
 import { getUpcomingReminders, isNotificationEnabled, notificationsSupported, permissionStatus } from "../services/notifications";
+import { onDataChanged } from "../services/dataEvents";
+import { notificationRoute } from "../navigation/routes";
 
 const pad = (n) => String(n).padStart(2, "0");
 const dayKey = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
@@ -27,6 +29,9 @@ export default function NotificationsScreen({ navigation }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [status, setStatus] = useState("on"); // on | off | unsupported
+  const [reload, setReload] = useState(0);
+
+  useFocusEffect(useCallback(() => onDataChanged(() => setReload((value) => value + 1)), []));
 
   useFocusEffect(useCallback(() => {
     let active = true;
@@ -49,7 +54,7 @@ export default function NotificationsScreen({ navigation }) {
       }
     })();
     return () => { active = false; };
-  }, []));
+  }, [reload]));
 
   // 날짜별로 묶기
   const groups = [];
@@ -60,11 +65,8 @@ export default function NotificationsScreen({ navigation }) {
   }
 
   const open = (item) => {
-    if (item.data?.documentId) {
-      navigation.navigate("Management", { documentId: item.data.documentId, documentTitle: item.data.documentTitle });
-    } else {
-      navigation.navigate("Tabs", { screen: "Todos" });
-    }
+    const target = notificationRoute(item.data);
+    if (target) navigation.navigate(target.name, target.params);
   };
 
   return (

@@ -1,12 +1,13 @@
 import { Text } from "./Typography";
 // 첫 실행 안내 (3장). 처음 로그인했을 때 한 번 뜨고, 설정 → 앱 소개 다시 보기로 다시 볼 수 있다.
 import React, { useEffect, useRef, useState } from "react";
-import { Modal, View, ScrollView, Pressable, StyleSheet, useWindowDimensions } from "react-native";
+import { Alert, Modal, View, ScrollView, Pressable, StyleSheet, useWindowDimensions } from "react-native";
 import ScreenSurface from "./ScreenSurface";
 import { Ionicons } from "@expo/vector-icons";
 import PrimaryButton from "./PrimaryButton";
 import { colors, radius, spacing, type } from "../theme/theme";
 import { finishOnboarding, onShowOnboarding, shouldShowOnboarding } from "../services/onboarding";
+import { isNotificationEnabled, notificationsSupported, permissionStatus, setNotificationEnabled } from "../services/notifications";
 
 const PAGES = [
   {
@@ -22,13 +23,15 @@ const PAGES = [
   {
     icon: "notifications-outline",
     title: "마감까지\n챙겨 드려요",
-    body: "마감일에서 거꾸로 준비 계획을 세우고, D-3·D-1·당일에 알림을 보내 드려요.",
+    body: "준비 계획을 등록하면 마감과 할 일을 알려 드려요. 알림을 받을 시점은 설정에서 고를 수 있어요.",
   },
 ];
 
 export default function OnboardingModal() {
   const [visible, setVisible] = useState(false);
   const [page, setPage] = useState(0);
+  const [offerPermission, setOfferPermission] = useState(false);
+  const [requesting, setRequesting] = useState(false);
   const scroll = useRef(null);
   const { width } = useWindowDimensions();
   const pageWidth = Math.min(width, 480);
@@ -40,10 +43,27 @@ export default function OnboardingModal() {
     return () => { active = false; off(); };
   }, []);
 
+  useEffect(() => {
+    if (!visible || !notificationsSupported) return;
+    let active = true;
+    Promise.all([permissionStatus(), isNotificationEnabled()]).then(([status, enabled]) => {
+      if (active) setOfferPermission(enabled && ["undetermined", "denied"].includes(status));
+    }).catch(() => { if (active) setOfferPermission(false); });
+    return () => { active = false; };
+  }, [visible]);
+
   const close = () => {
     finishOnboarding();
     setVisible(false);
     setPage(0);
+    setOfferPermission(false);
+  };
+
+  const allowNotifications = async () => {
+    setRequesting(true);
+    try { await setNotificationEnabled(true); close(); }
+    catch { Alert.alert("알림 권한을 확인하지 못했어요", "설정에서 다시 시도해 주세요."); }
+    finally { setRequesting(false); }
   };
 
   const goTo = (index) => {
@@ -54,7 +74,7 @@ export default function OnboardingModal() {
   const last = page === PAGES.length - 1;
 
   return (
-    <Modal visible={visible} animationType="fade" onRequestClose={close}>
+    <Modal visible={visible} animationType="fade" onRequestClose={() => { if (!requesting) close(); }}>
       <ScreenSurface style={styles.safe}>
         <View style={[styles.frame, { width: pageWidth }]}>
           <View style={styles.topRow}>
@@ -95,7 +115,16 @@ export default function OnboardingModal() {
           </View>
 
           <View style={styles.bottom}>
-            <PrimaryButton tone="stamp" label={last ? "시작하기" : "다음"} onPress={() => (last ? close() : goTo(page + 1))} />
+            {last && offerPermission ? (
+              <>
+                <PrimaryButton tone="stamp" label="알림 허용하고 시작하기" disabled={requesting} onPress={allowNotifications} />
+                <Pressable accessibilityRole="button" disabled={requesting} onPress={close} style={styles.later}>
+                  <Text style={styles.skip}>나중에</Text>
+                </Pressable>
+              </>
+            ) : (
+              <PrimaryButton tone="stamp" label={last ? "시작하기" : "다음"} onPress={() => (last ? close() : goTo(page + 1))} />
+            )}
           </View>
         </View>
       </ScreenSurface>
@@ -119,4 +148,5 @@ const styles = StyleSheet.create({
   dot: { width: 8, height: 8, borderRadius: radius.pill, backgroundColor: colors.line },
   dotOn: { width: 22, backgroundColor: colors.stamp },
   bottom: { marginTop: "auto", padding: spacing.lg },
+  later: { alignItems: "center", padding: spacing.sm, marginTop: spacing.xs },
 });

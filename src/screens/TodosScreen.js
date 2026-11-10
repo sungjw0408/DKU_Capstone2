@@ -8,6 +8,7 @@ import AppHeader from "../components/AppHeader";
 import ScreenSurface from "../components/ScreenSurface";
 import { Ionicons } from "@expo/vector-icons";
 import Card from "../components/Card";
+import TodoOriginBadge from "../components/TodoOriginBadge";
 import { colors, spacing, type } from "../theme/theme";
 import { listTodos, updateTodo } from "../services/api";
 import { groupTodos, todoDateLabel } from "../utils/todoList";
@@ -89,6 +90,7 @@ export default function TodosScreen({ navigation }) {
         <View style={{ flex: 1 }}>
           <Text style={[type.bodyStrong, item.is_completed && styles.doneText]} numberOfLines={2}>{item.title}</Text>
           <Text style={styles.sub} numberOfLines={1}>{item.doc_title}</Text>
+          <TodoOriginBadge todo={item} />
         </View>
         <Text style={[styles.when, tone === "overdue" && { color: colors.alert }]}>
           {todoDateLabel(item.date)}{item.time ? ` ${item.time}` : ""}

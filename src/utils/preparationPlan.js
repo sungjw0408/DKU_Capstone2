@@ -60,22 +60,29 @@ function relatedDocumentNotes(todo, requiredDocs) {
   return docs.length ? `필요 서류: ${docs.join(", ")}` : "";
 }
 
-// view는 근거 검증·사용자 확인을 반영한 API 응답이다. 준비 날짜와 소요시간은 생성하지 않는다.
+export function newTodoStepId() {
+  return `custom-step-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+// 마감일을 우선 쓰고, 마감일이 없으면 공지에서 확인한 시작일을 쓴다.
 export function createDocumentPlan({ documentId, view, analysis } = {}, today = localPlanDate()) {
   const requiredDocs = [...new Set((view?.requiredDocs || [])
     .filter((doc) => typeof doc === "string" && doc.trim()).map((doc) => doc.trim()))];
+  const [datePart, timePart = ""] = (view?.deadline?.datetime || "").split("T");
+  const deadlineDate = parsePlanDate(datePart) ? datePart : "";
+  const startDate = (analysis?.fields ?? [])
+    .filter((field) => field.key === "application_start" && field.status !== "unverified")
+    .map((field) => field.normalized_datetime?.split("T")[0])
+    .find(parsePlanDate) ?? "";
   const steps = (view?.todos || []).filter((todo) => todo.text?.trim()).map((todo, index) => ({
     id: `document-todo-${todo.id || index}`,
-    label: todo.text.trim(), date: "", time: "", durationMinutes: null,
+    label: todo.text.trim(), date: deadlineDate || startDate, time: "", durationMinutes: null, origin: "ai",
     notes: relatedDocumentNotes(todo.text, requiredDocs), done: false,
   }));
   if (view) {
-    const iso = view.deadline?.datetime || "";
-    const [datePart, timePart = ""] = iso.split("T");
-    const date = parsePlanDate(datePart) ? datePart : "";
-    const time = date && /^([01]\d|2[0-3]):[0-5]\d$/.test(timePart) ? timePart : "";
+    const time = deadlineDate && /^([01]\d|2[0-3]):[0-5]\d$/.test(timePart) ? timePart : "";
     steps.push({
-      id: "document-deadline", label: "최종 마감", date, time,
+      id: "document-deadline", label: "최종 마감", date: deadlineDate, time,
       deadlineText: view.deadline?.text || "", durationMinutes: null, notes: "", done: false, isDeadline: true,
     });
   }
@@ -83,7 +90,7 @@ export function createDocumentPlan({ documentId, view, analysis } = {}, today = 
     id: documentId || view?.id || analysis?.document_id || "missing-document",
     title: view?.title || analysis?.title || "문서 준비 계획",
     referenceDate: today, isMock: false, hasAnalysis: !!view,
-    requiredDocs,
+    requiredDocs, startDate,
     steps: sortPlanSteps(steps),
   };
 }

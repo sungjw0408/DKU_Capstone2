@@ -24,6 +24,7 @@ export default function AppHeader({ title, subtitle }) {
     <View style={styles.brandRow}>
       <Image accessible={false} source={require("../../assets/illustrations/ttokdoc-mascot.png")} resizeMode="contain" style={styles.mascot} />
       <Text style={styles.brand}>똑독</Text>
+      {!!subtitle && <Text style={styles.brandSubtitle}>{subtitle}</Text>}
     </View>
     <View style={styles.actions}>
       <Pressable accessibilityRole="button" accessibilityLabel="알림함" hitSlop={8}
@@ -52,9 +53,10 @@ const styles = StyleSheet.create({
   heading: { flex: 1, gap: 2 },
   title: { ...type.display, fontSize: 22, lineHeight: 26 },
   subtitle: { ...type.small, lineHeight: 16 },
-  brandRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
+  brandRow: { flex: 1, flexDirection: "row", alignItems: "center", gap: spacing.sm, paddingRight: spacing.sm },
   mascot: { width: 40, height: 40 },
   brand: { ...type.h1 },
+  brandSubtitle: { ...type.small, fontSize: 11, lineHeight: 14, fontWeight: "600", flexShrink: 1, minWidth: 0 },
   actions: { flexDirection: "row", alignItems: "center", gap: spacing.lg, flexShrink: 0 },
   iconButton: { backgroundColor: "rgba(233,243,255,0.48)", borderWidth: 1,
     borderColor: "rgba(246,251,255,0.7)", padding: 8, borderRadius: 14,

@@ -17,6 +17,13 @@ _METHOD = re.compile(r"([가-힣A-Za-z]*(?:포털|홈페이지|이메일|메일|
 _HEADER_NUM = re.compile(r"^\s*(?:\d+[.)]|[가-하][.)])\s*")
 _BULLET = re.compile(r"^\s*[-•·▶※○●]\s*")
 _PARTICLE = re.compile(r"(을|를|이|가|은|는|와|과|및)$")
+_EXCLUSION_HEADING = re.compile(r"^(?:(?:신청|지원|접수)\s*불가(?:\s*대상)?|(?:신청\s*)?제외\s*대상)\s*$")
+_EXCLUSION_LINE = re.compile(r"(?:신청|지원|접수)(?:은|는|이|가|을|를)?\s*(?:불가|할\s*수\s*없)|(?:신청|지원)\s*대상에서\s*제외")
+_EMAIL = re.compile(
+    r"(?<![A-Z0-9._%+'@-])[A-Z0-9_%+'-]+(?:\.[A-Z0-9_%+'-]+)*"
+    r"@(?:[A-Z0-9](?:[A-Z0-9-]*[A-Z0-9])?\.)+[A-Z]{2,}(?![A-Z0-9_@-]|\.[A-Z0-9_@-])",
+    re.IGNORECASE,
+)
 
 
 def _after_colon(text: str) -> str | None:
@@ -39,6 +46,11 @@ def _f(key, label, value, quote, page, conf, iso=None) -> LLMField:
 
 class MockProvider:
     name = "mock"
+
+    def draft_mail(self, kind: str, title: str, question: str) -> str:
+        if kind == "inquiry":
+            return f"안녕하세요. {title} 관련해 문의드립니다.\n\n{question}\n\n감사합니다."
+        return f"안녕하세요. {title}에 신청합니다."
 
     def transcribe(self, data: bytes, mime_type: str) -> list[str]:
         raise RuntimeError(
@@ -66,25 +78,43 @@ class MockProvider:
             cat, sub = DocCategory.OTHER, "일반 문서"
 
         # 2) 문장 단위 규칙
-        collecting_criteria = False
+        collecting_criteria = None
+        exclusion_quote = ""
+        contact_section = False
+        emails_seen: set[str] = set()
         docs_seen: set[str] = set()
         method_value: str | None = None
         for s in sentences:
             t = s.text
 
+            heading = _HEADER_NUM.sub("", _BULLET.sub("", t)).split(":", 1)[0].strip()
+            if _EXCLUSION_HEADING.fullmatch(heading):
+                exclusion_quote = t
+                if value := _after_colon(t):
+                    fields.append(_f(FieldKey.APPLICANT_EXCLUSION, "신청 불가 대상", value, t, s.page, 0.9))
+                    collecting_criteria = None
+                else:
+                    collecting_criteria = FieldKey.APPLICANT_EXCLUSION
+                continue
+            if _EXCLUSION_LINE.search(t) and not re.search(r"마감|기한|(?:신청|접수)\s*기간", t):
+                fields.append(_f(FieldKey.APPLICANT_EXCLUSION, "신청 불가 대상", _BULLET.sub("", t), t, s.page, 0.9))
+                continue
+
             # 신청 대상 (헤더 아래 글머리표 목록 or "대상: ..." 인라인)
             if "대상" in t and len(t) < 20 and not _after_colon(t):
-                collecting_criteria = True
+                collecting_criteria = FieldKey.APPLICANT_CRITERIA
                 continue
             if collecting_criteria:
                 if _BULLET.match(t):
-                    fields.append(_f(FieldKey.APPLICANT_CRITERIA, "신청 대상", _clean(t), t, s.page, 0.9))
+                    label = "신청 불가 대상" if collecting_criteria == FieldKey.APPLICANT_EXCLUSION else "신청 대상"
+                    if collecting_criteria == FieldKey.APPLICANT_EXCLUSION:
+                        exclusion_quote += "\n" + t
+                    quote = exclusion_quote if collecting_criteria == FieldKey.APPLICANT_EXCLUSION else t
+                    fields.append(_f(collecting_criteria, label, _BULLET.sub("", t).strip(), quote, s.page, 0.9))
                     continue
-                collecting_criteria = False
+                collecting_criteria = None
             if "대상" in t and (v := _after_colon(t)):
-                for part in re.split(r",|/", v):
-                    if part.strip():
-                        fields.append(_f(FieldKey.APPLICANT_CRITERIA, "신청 대상", _clean(part), t, s.page, 0.85))
+                fields.append(_f(FieldKey.APPLICANT_CRITERIA, "신청 대상", v, t, s.page, 0.85))
             elif m := re.search(r"대상은\s*(.+?)(?:인\s*자에\s*한합니다|입니다|이다)", t):
                 for part in re.split(r"이며|,", m.group(1)):
                     if part.strip():
@@ -123,9 +153,16 @@ class MockProvider:
                 method_value = m.group(1)
                 fields.append(_f(FieldKey.SUBMISSION_METHOD, "제출 방법", method_value, t, s.page, 0.75))
 
-            # 문의처
-            if "문의" in t and re.search(r"\d{2,4}-\d{3,4}-\d{4}", t):
+            # 문의처 제목 다음 줄에 이메일을 따로 적는 공지도 지원한다.
+            is_contact = bool(re.match(r"^문의(?:처|\s*사항|\s*연락처)?\s*$", heading)) or "문의" in t
+            if is_contact and re.search(r"\d{2,4}-\d{3,4}-\d{4}", t):
                 fields.append(_f(FieldKey.CONTACT, "문의처", _after_colon(t) or t, t, s.page, 0.9))
+            if is_contact or contact_section:
+                for address in _EMAIL.findall(t):
+                    if address.lower() not in emails_seen:
+                        emails_seen.add(address.lower())
+                        fields.append(_f(FieldKey.CONTACT, "문의처 이메일", address, t, s.page, 0.95))
+            contact_section = is_contact and _after_colon(t) is None
 
         # 3) 해야 할 일: 서류 → 행동 동사로 변환, 마지막에 제출
         def _quote_for(key):

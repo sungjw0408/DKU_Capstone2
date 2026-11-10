@@ -1,4 +1,4 @@
-import React, { useEffect } from "react";
+import React, { useCallback, useEffect, useRef } from "react";
 import { StyleSheet } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { NavigationContainer, createNavigationContainerRef } from "@react-navigation/native";
@@ -16,6 +16,8 @@ import SettingsScreen from "../screens/SettingsScreen";
 import OnboardingModal from "../components/OnboardingModal";
 import { startDeadlineNotifications } from "../services/notifications";
 import useReducedMotion from "../hooks/useReducedMotion";
+import { useAuth } from "../contexts/AuthContext";
+import { notificationRoute } from "./routes";
 
 const Stack = createNativeStackNavigator();
 const navigationRef = createNavigationContainerRef();
@@ -31,16 +33,27 @@ const screenOptions = {
 
 export default function AppNavigator() {
   const reducedMotion = useReducedMotion();
-  // 로그인한 동안 마감 알림을 켜 둔다 (로그아웃하면 이 화면이 사라지면서 예약 알림도 지움)
-  useEffect(() => startDeadlineNotifications((data) => {
-    // 알림을 누르면 그 문서의 관리 화면으로
-    if (data.documentId && navigationRef.isReady()) {
-      navigationRef.navigate("Management", { documentId: data.documentId, documentTitle: data.documentTitle });
-    }
-  }), []);
+  const { user } = useAuth();
+  const uid = user?.uid;
+  const pendingRoute = useRef(null);
+  const openPendingRoute = useCallback(() => {
+    if (!pendingRoute.current || !navigationRef.isReady()) return;
+    const { name, params } = pendingRoute.current;
+    pendingRoute.current = null;
+    navigationRef.navigate(name, params);
+  }, []);
+
+  useEffect(() => {
+    if (!uid) return;
+    const stop = startDeadlineNotifications(uid, (data) => {
+      pendingRoute.current = notificationRoute(data);
+      openPendingRoute();
+    });
+    return () => { pendingRoute.current = null; stop(); };
+  }, [uid, openPendingRoute]);
 
   return (
-    <NavigationContainer ref={navigationRef}>
+    <NavigationContainer ref={navigationRef} onReady={openPendingRoute}>
       <Stack.Navigator
         screenOptions={{ ...screenOptions, animation: reducedMotion ? "none" : "slide_from_right", animationDuration: 280 }}
         initialRouteName={__DEV__ && process.env.EXPO_PUBLIC_PREVIEW_SCREEN === "action-plan" ? "ActionPlan" : "Tabs"}

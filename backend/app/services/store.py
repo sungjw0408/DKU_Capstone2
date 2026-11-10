@@ -9,7 +9,7 @@ from threading import RLock
 
 from app.config import get_settings
 from app.schemas import AnalysisResult, SourceDocument
-from app.services.preparation_plan import PlanSave, RevisionConflict, plan_todos
+from app.services.preparation_plan import PlanSave, RevisionConflict, default_todo_date, plan_todos
 from app.services.firebase_admin_client import get_firebase_app
 
 _store_lock = RLock()
@@ -43,6 +43,21 @@ def _new_plan(record, body, registered=False):
             "revision": body.revision + 1, "updated_at": _now()}
     _check_size({**record, "plan": plan})
     return plan
+
+
+def _append_todo(record, step_id, todo):
+    current = record.get("plan")
+    if not current or not current.get("registered"):
+        raise ValueError("준비 계획을 등록한 뒤 할 일을 추가할 수 있어요.")
+    if any(step["id"] == step_id for step in current["steps"]):
+        return current
+    deadline = next((step.get("date") for step in current["steps"] if step.get("isDeadline")), None)
+    selected_date = todo.date or default_todo_date(deadline, record.get("analysis"))
+    if not selected_date:
+        raise ValueError("할 일 날짜를 선택해 주세요.")
+    step = {"id": step_id, "label": todo.title, "date": selected_date, "time": todo.time,
+            "notes": todo.notes.strip(), "origin": "user"}
+    return _new_plan(record, PlanSave(steps=[*current["steps"], step], revision=current["revision"]))
 
 
 def _changed_analysis_plan(record, analysis):
@@ -161,6 +176,17 @@ class MemoryStore:
             return sorted([copy.deepcopy(item) for item in self._todos.values()
                            if not doc_id or item.get("document_id") == doc_id],
                           key=lambda item: (item.get("doc_title", ""), item.get("order", 0)))
+
+    def add_todo(self, doc_id, step_id, todo):
+        with self._lock:
+            record = self._data.get(doc_id)
+            if not record or not record.get("analysis"):
+                raise KeyError(doc_id)
+            plan = _append_todo(record, step_id, todo)
+            record["plan"] = plan
+            record["updated_at"] = plan["updated_at"]
+            self._sync_todos(doc_id, record)
+            return self.list_todos(doc_id)
 
     def mutate_todo(self, item_id, completed=None, delete=False, changes=None):
         changes = dict(changes or {})
@@ -417,6 +443,23 @@ class FirestoreStore:
             return plan
 
         return save(self.db.transaction())
+
+    def add_todo(self, doc_id, step_id, todo):
+        from firebase_admin import firestore
+
+        @firestore.transactional
+        def add(transaction):
+            self._guard(transaction)
+            snap = self.col.document(doc_id).get(transaction=transaction)
+            if not snap.exists or not snap.to_dict().get("analysis"):
+                raise KeyError(doc_id)
+            record = snap.to_dict()
+            plan = _append_todo(record, step_id, todo)
+            if plan is not record.get("plan"):
+                self._write_plan(transaction, doc_id, record, plan)
+            return plan_todos(doc_id, record["title"], plan)
+
+        return add(self.db.transaction())
 
     def update_analysis(self, analysis):
         from firebase_admin import firestore

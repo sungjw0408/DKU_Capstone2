@@ -11,13 +11,14 @@ from google.genai import errors as genai_errors
 from pydantic import BaseModel
 
 from app.agents import intake
-from app.api.authn import active_uid
+from app.api.authn import active_uid, locked_identity
 from app.config import get_settings
 from app.llm import get_llm
 from app.schemas import AnalysisResult
 from app.services import originals, pipeline
 from app.services.frontend_view import to_analysis_detail
-from app.services.preparation_plan import DocumentPatch, PlanSave, RevisionConflict, TodoPatch, document_list_item
+from app.services.notice_mail import MailDraftRequest, mail_options, prepare_draft
+from app.services.preparation_plan import DocumentPatch, PlanSave, RevisionConflict, TodoCreate, TodoPatch, document_list_item
 from app.services.store import get_store
 from app.utils.text import split_sentences
 
@@ -34,6 +35,13 @@ ATTACHMENT_TYPES = {
 
 
 def user_store(uid: str = Depends(active_uid)):
+    return get_store(uid)
+
+
+def google_mail_store(uid: str = Depends(active_uid), identity=Depends(locked_identity)):
+    firebase = identity.get("firebase")
+    if not isinstance(firebase, dict) or firebase.get("sign_in_provider") != "google.com":
+        raise HTTPException(403, "Google 계정으로 로그인하면 메일을 작성할 수 있어요.")
     return get_store(uid)
 
 
@@ -552,9 +560,58 @@ def save_plan(doc_id: str, body: PlanSave, store=Depends(user_store)):
 
 @router.post("/documents/{doc_id}/plan/register")
 def register_plan(doc_id: str, body: PlanSave, store=Depends(user_store)):
-    if not any(not step.isDeadline for step in body.steps):
+    todos = [step for step in body.steps if not step.isDeadline]
+    if not todos:
         raise HTTPException(422, "등록할 준비 일정을 추가해 주세요.")
+    if any(not step.date for step in todos):
+        raise HTTPException(422, "등록하기 전에 모든 할 일의 날짜를 선택해 주세요.")
     return _save_plan(doc_id, body, store, registered=True)
+
+
+@router.post("/documents/{doc_id}/todos", status_code=201)
+def add_document_todo(doc_id: str, body: TodoCreate, store=Depends(user_store)):
+    step_id = body.step_id or f"custom-step-{uuid.uuid4().hex}"
+    try:
+        return {"todos": store.add_todo(doc_id, step_id, body)}
+    except KeyError as exc:
+        raise HTTPException(404, "분석된 문서를 찾을 수 없습니다.") from exc
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
+def _registered_mail_options(doc_id, store):
+    record = _record(doc_id, store)
+    if not record.get("analysis") or not (record.get("plan") or {}).get("registered"):
+        raise HTTPException(409, "준비 계획을 등록한 뒤 메일을 작성할 수 있어요.")
+    analysis = AnalysisResult.model_validate(record["analysis"])
+    return mail_options(analysis, store.get_source(doc_id), record.get("title") or analysis.title)
+
+
+@router.get("/documents/{doc_id}/mail-options")
+def get_mail_options(doc_id: str, store=Depends(google_mail_store)):
+    return _registered_mail_options(doc_id, store)
+
+
+@router.post("/mail-drafts/{doc_id}")
+def create_mail_draft(doc_id: str, body: MailDraftRequest, store=Depends(google_mail_store)):
+    options = _registered_mail_options(doc_id, store)
+    try:
+        subject, application_details = prepare_draft(options, body)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    try:
+        question = body.question if body.kind == "inquiry" else ""
+        text = get_llm().draft_mail(body.kind, options["title"], question).strip()
+        if not text or len(text) > 3000:
+            raise ValueError("Invalid draft length")
+    except genai_errors.APIError as exc:
+        status = 503 if exc.code in (429, 503, 504) else 502
+        raise HTTPException(status, "지금 메일 초안을 만들기 어려워요. 잠시 후 다시 시도해 주세요.") from exc
+    except (ValueError, RuntimeError) as exc:
+        raise HTTPException(502, "메일 초안을 만들지 못했어요. 잠시 후 다시 시도해 주세요.") from exc
+    if application_details:
+        text = f"{text}\n\n{application_details}\n\n감사합니다."
+    return {"recipient": body.recipient, "subject": subject, "body": text}
 
 
 @router.get("/todos")

@@ -73,6 +73,7 @@ def build_sections(a: AnalysisResult) -> list[dict]:
 
     sections = [
         make_section("criteria", "신청 대상", [make_item(f) for f in _usable(fs, FieldKey.APPLICANT_CRITERIA)]),
+        make_section("exclusions", "신청 불가 대상", [make_item(f) for f in _usable(fs, FieldKey.APPLICANT_EXCLUSION)]),
         make_section("period", period_title, period_items),
         make_section("documents", "필요 서류", [make_item(f) for f in _usable(fs, FieldKey.REQUIRED_DOCUMENT)]),
         make_section("method", "제출 방법", [make_item(f) for f in _usable(fs, FieldKey.SUBMISSION_METHOD)]),
@@ -110,6 +111,7 @@ def build_tags(a: AnalysisResult) -> list[str]:
 
 def to_analysis_detail(a: AnalysisResult, source: SourceDocument | None = None,) -> dict:
     criteria = _usable(a.fields, FieldKey.APPLICANT_CRITERIA)
+    exclusions = _usable(a.fields, FieldKey.APPLICANT_EXCLUSION)
     todos = _usable(a.fields, FieldKey.TODO)
     deadline = next(iter(_usable(a.fields, FieldKey.DEADLINE)), None)
     docs = _usable(a.fields, FieldKey.REQUIRED_DOCUMENT)
@@ -138,13 +140,16 @@ def to_analysis_detail(a: AnalysisResult, source: SourceDocument | None = None,)
             }
 
     # 근거 화면: 핵심 필드의 원문 문장을 원문 순서대로 모은다
-    key_fields = [*criteria, *([deadline] if deadline else []), *([method] if method else [])]
+    key_fields = [*criteria, *exclusions, *([deadline] if deadline else []), *([method] if method else [])]
     spans = sorted({(f.evidence.char_start, f.evidence.matched_text) for f in key_fields if f.evidence.matched_text},
                    key=lambda x: x[0] or 0)
     ev_fields = []
     if criteria:
         ev_fields.append({"label": "신청 대상", "value": " / ".join(c.value for c in criteria),
                           "confidence": min(c.confidence for c in criteria)})
+    if exclusions:
+        ev_fields.append({"label": "신청 불가 대상", "value": " / ".join(c.value for c in exclusions),
+                          "confidence": min(c.confidence for c in exclusions)})
     if deadline:
         ev_fields.append({"label": "마감일", "value": deadline.value, "confidence": deadline.confidence})
     if method:

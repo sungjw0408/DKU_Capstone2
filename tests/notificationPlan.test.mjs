@@ -85,6 +85,16 @@ test("설정에서 고른 알림 시각으로 예약한다", () => {
   assert.deepEqual(today.map((i) => i.id), ["doc:c:d0"]);
 });
 
+test("선택한 마감 알림만 예약하고, 마감 알림을 모두 해제해도 할 일 알림은 남는다", () => {
+  const docs = [{ id: "a", title: "공지", registered: true, deadline: "2026-11-25" }];
+  const todos = [{ id: "t1", title: "준비", document_id: "a", date: "2026-11-20" }];
+  const selected = buildNotificationPlan(docs, todos, now, { hour: 18, offsets: [0, 3] });
+  assert.deepEqual(selected.map((item) => item.id), ["todo:2026-11-20", "doc:a:d3", "doc:a:d0"]);
+  assert.equal(selected[0].data.todoId, "t1");
+  assert.ok(selected.every((item) => item.date.getHours() === 18));
+  assert.deepEqual(buildNotificationPlan(docs, todos, now, { offsets: [] }).map((item) => item.id), ["todo:2026-11-20"]);
+});
+
 test("알림 시각 표시", () => {
   assert.equal(hourLabel(9), "오전 9시");
   assert.equal(hourLabel(12), "낮 12시");

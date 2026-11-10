@@ -18,6 +18,13 @@ def test_correct_deadline_is_verified(verifier):
     assert vf.location == "1페이지 6번째 문장"
 
 
+def test_positive_evidence_cannot_verify_an_exclusion(verifier):
+    field = verifier.verify_field(F(FieldKey.APPLICANT_EXCLUSION, "2026학년도 재학생",
+        "- 2026학년도 재학생"), "exclusion")
+    assert field.status == "needs_review"
+    assert not check(field, "exclusion_role").passed
+
+
 def test_quote_with_whitespace_noise_still_matches(verifier):
     vf = verifier.verify_field(F(FieldKey.REQUIRED_DOCUMENT, "통장 사본",
         "제출서류 :  신청서,성적증명서, 통장사본"), "r")

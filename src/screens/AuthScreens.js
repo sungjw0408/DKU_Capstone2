@@ -10,7 +10,7 @@ import AccountDeletionForm from "../components/AccountDeletionForm";
 import GoogleAccountButton from "../components/GoogleAccountButton";
 import { useAuth } from "../contexts/AuthContext";
 import useAffiliations from "../hooks/useAffiliations";
-import { googleSignInAvailable } from "../services/auth";
+import { googleSignInAvailable, googleSignInUnavailableReason } from "../services/auth";
 import { authErrorMessage, findAffiliation, validateCredentials } from "../utils/authForm";
 import { colors, radius, spacing, type } from "../theme/theme";
 
@@ -73,7 +73,7 @@ export function LoginScreen({ navigation }) {
     <PrimaryButton label={busy && !guestStarting && !googleStarting ? "로그인 중…" : "로그인"} tone="stamp" onPress={submit} disabled={busy} />
     <AuthLink label="처음이신가요? 회원가입" disabled={busy} onPress={() => navigation.navigate("SignUp")} />
     <GoogleAccountButton label={googleStarting ? "Google 로그인 중…" : "Google 계정으로 시작하기"}
-      accessibilityHint={googleSignInAvailable ? undefined : "Google 로그인은 현재 웹에서 이용할 수 있어요."}
+      accessibilityHint={googleSignInAvailable ? undefined : googleSignInUnavailableReason}
       disabled={busy || !googleSignInAvailable} onPress={startGoogle} />
     <View style={styles.guestSection}>
       <AuthLink label={guestStarting ? "게스트로 시작하는 중…" : "게스트로 시작하기"} disabled={busy} onPress={startGuest} />
