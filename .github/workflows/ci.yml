@@ -39,8 +39,8 @@ jobs:
           python -m pip install -r requirements.txt
           python -m pip install "reportlab>=4.0,<5.0"
 
-            - name: Run backend tests
-              run: python -m pytest -q
+      - name: Run backend tests
+        run: python -m pytest -q
 
   frontend-test:
     name: Frontend Tests
