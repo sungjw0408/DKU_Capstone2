@@ -9,7 +9,7 @@ LLM의 자기 확신도는 참고값(20%)일 뿐이고, 신뢰도의 대부분�
   4. date_role          : 날짜 주변 표현이 필드 의미(마감/발표/행사)와 맞는가  → 날짜 의미 혼동 탐지
   5. date_range         : "A ~ B" 기간에서 시작/끝을 제대로 골랐는가
 
-최종 신뢰도 = 0.45·근거일치 + 0.35·값검사평균 + 0.20·LLM확신도
+최종 신뢰도 = 0.65·근거일치 + 0.35·값검사평균 //AI 자기 확신도는 가르지 못해서 뺌
   - 근거를 못 찾으면 unverified (≤40)
   - 치명적 검사 실패가 있으면 ≤60
   - review_threshold 미만이면 needs_review (사용자 확인 필요)
@@ -38,7 +38,7 @@ from app.schemas import (
 from app.utils.dates import ParsedDate, find_ranges, parse_dates, parse_iso
 from app.utils.text import normalize
 
-W_EVIDENCE, W_VALUE, W_LLM = 0.45, 0.35, 0.20
+W_EVIDENCE, W_VALUE, W_LLM = 0.65, 0.35, 0.0
 EVIDENCE_MIN = 0.80  # 이 이상이면 근거 일치로 인정
 REANCHOR_SCORE = 0.65
 
@@ -70,6 +70,44 @@ class _Located:
     evidence: Evidence
     text: str  # 값 검사에 쓸 원문 텍스트 ("" 이면 근거 없음)
     reanchored: bool = False
+
+
+# ─────────────────────────── 분류 검사 (3회차) ───────────────────────────
+# "근거가 있다"와 "맞는 칸에 들어갔다"는 다르다. 원문에 있는 글자라도 엉뚱한 칸에 넣었으면 확인 필요로 보낸다.
+# 통과하면 검사를 추가하지 않는다 (다른 항목의 신뢰도가 바뀌지 않게).
+_CRIT_SELECTION = re.compile(r"합산|배점|가산점|선발\s*(기준|방법)|심사\s*(기준|방법)|\d+\s*%\s*[+＋]")
+_CRIT_EXCLUDE = re.compile(r"(불가|제외)\s*(함|됨|합니다|입니다|\)|$)|선발\s*제외|신청\s*제외|제외\s*(대상|학과)|^제외")
+_CRIT_PERSON = re.compile(r"학생|자\b|자$|자\)|생$|재학|졸업|학년|학기|이상|이하|소지|가능|거주|국적|교원|직원|청년|분$|사람")
+_CRIT_PROGRAM_NAME = re.compile(r"장학금\s*(,|$)")
+_DOC_SELECTED_ONLY = re.compile(r"선발\s*(인원|자|된)|합격자|최종\s*선발|선정\s*후|선발\s*대상")
+_DOC_FORMAT_WORDS = re.compile(r"\(.*?\)|hwp|pdf|docx?|한글|양식|파일|형식|병합|사용|작성|으로|로|된|한", re.I)
+_URL_ONLY = re.compile(r"(?:https?://)?(?:www\.)?[a-z0-9-]+(?:\.[a-z0-9-]+)*\.[a-z]{2,}(?:/\S*)?", re.I)
+
+
+def _check_category(key: str, value: str) -> list[Check]:
+    v = (value or "").strip()
+
+    def fail(detail: str) -> list[Check]:
+        return [Check(name="category_fit", passed=False, score=0.0, detail=detail)]
+
+    if key == "applicant_criteria":
+        if _CRIT_SELECTION.search(v):
+            return fail("선발 방법·심사 기준으로 보여요. 신청 대상이 맞는지 확인해 주세요")
+        if _CRIT_EXCLUDE.search(v) and "가능" not in v:  # "개인만 가능, 팀 불가"처럼 가능 범위를 말하는 문장은 제외
+            return fail("신청할 수 없는 사람(제외 대상)으로 보여요")
+        if _CRIT_PROGRAM_NAME.search(v) and not _CRIT_PERSON.search(v):
+            return fail("장학금·프로그램 이름으로 보여요. 신청 대상이 맞는지 확인해 주세요")
+    elif key == "required_document":
+        if _DOC_SELECTED_ONLY.search(v):
+            return fail("선발된 사람만 나중에 내는 서류로 보여요")
+        core = re.sub(r"[^0-9a-z가-힣]", "", _DOC_FORMAT_WORDS.sub("", v).lower())
+        if len(core) < 2:
+            return fail("서류 이름이 아니라 파일 형식·작성 방법으로 보여요")
+    elif key == "submission_method":
+        rest = re.sub(r"[^0-9a-z가-힣]", "", _URL_ONLY.sub("", v).lower())
+        if _URL_ONLY.search(v) and len(rest) < 2:
+            return fail("사이트 주소만 있어요. 어디서 어떻게 신청하는지 확인해 주세요")
+    return []
 
 
 class Verifier:
@@ -238,6 +276,9 @@ class Verifier:
                              detail="원문에서 근거를 찾지 못했습니다 (AI가 만들어낸 정보일 수 있음)")
 
         value_checks = self._check_date(f, loc.text) if f.key in DATE_KEYS else self._check_text(f, loc.text)
+        if f.key not in DATE_KEYS:
+            value_checks += _check_category(f.key.value, f.value)
+
         if f.key == FieldKey.APPLICANT_EXCLUSION and not _EXCLUSION_ROLE.search(loc.text):
             value_checks.append(Check(name="exclusion_role", passed=False, score=0.0,
                                       detail="근거 문장에서 신청 불가 또는 제외 조건을 확인하지 못했습니다"))

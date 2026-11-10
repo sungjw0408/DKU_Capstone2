@@ -1,3 +1,6 @@
+import os
+os.environ["LLM_PROVIDER"] = "mock"      # 테스트는 진짜 Gemini를 부르지 않음
+os.environ["STORAGE_BACKEND"] = "memory"  # 테스트는 Firestore를 쓰지 않음
 from datetime import datetime
 from pathlib import Path
 

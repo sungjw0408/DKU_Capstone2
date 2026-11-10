@@ -5,3 +5,4 @@ __pycache__/
 .venv/
 serviceAccount*.json
 /data/
+eval/results/
