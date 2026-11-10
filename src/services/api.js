@@ -1,8 +1,4 @@
-// src/services/api.js — ActionDoc 백엔드 호출
-// 프론트 루트 .env 에 EXPO_PUBLIC_API_URL=http://<PC 내부 IP>:8000
-//  - 실제 폰(Expo Go): PC의 내부 IP (localhost 불가)
-//  - Android 에뮬레이터: http://10.0.2.2:8000
-//  - 웹 / iOS 시뮬레이터: http://localhost:8000
+
 import { Platform } from "react-native";
 import { currentAuthUser } from "./auth";
 import { emitDataChanged } from "./dataEvents";
@@ -58,6 +54,18 @@ export function analyzeText(text) {
   return request("/api/documents/analyze", { method: "POST", body: form });
 }
 
+export function attachmentMimeType(filename) {
+  const name = (filename ?? "").toLowerCase();
+  const extension = name.includes(".") ? name.split(".").pop() : "";
+
+  return {
+    pdf: "application/pdf",
+    jpg: "image/jpeg",
+    jpeg: "image/jpeg",
+    png: "image/png",
+    webp: "image/webp",
+  }[extension] ?? null;
+}
 
 export async function analyzeWithAttachments(text, assets) {
   if (!text.trim()) {
@@ -72,10 +80,11 @@ export async function analyzeWithAttachments(text, assets) {
   form.append("text", text);
 
   for (const asset of assets) {
-    const name = asset.name ?? asset.fileName ?? "attachment.pdf";
+    const name = asset.name ?? asset.fileName ?? asset.file?.name ?? "";
+    const type = attachmentMimeType(name);
 
-    if (!name.toLowerCase().endsWith(".pdf")) {
-      throw new Error(`PDF 파일만 첨부할 수 있습니다: ${name}`);
+    if (!type) {
+      throw new Error(`지원하지 않는 첨부 파일 형식입니다: ${name}`);
     }
 
     if (Platform.OS === "web") {
@@ -87,7 +96,7 @@ export async function analyzeWithAttachments(text, assets) {
       form.append("files", {
         uri: asset.uri,
         name,
-        type: "application/pdf",
+        type,
       });
     }
   }
@@ -103,7 +112,6 @@ export async function analyzeWithAttachments(text, assets) {
     }
   );
 }
-
 
 // expo-image-picker / expo-document-picker 의 asset 을 그대로 넘기면 된다.
 export async function analyzeFile(asset) {
@@ -122,7 +130,6 @@ export async function analyzeFile(asset) {
   }
   return request("/api/documents/analyze", { method: "POST", body: form });
 }
-
 
 export async function analyzeImages(assets) {
   if (!Array.isArray(assets) || assets.length < 2 || assets.length > 5) {
@@ -173,7 +180,6 @@ export async function analyzeImages(assets) {
     }
   );
 }
-
 
 export const listDocuments = () => request("/api/documents");
 export const getDocument = (id) => request(`/api/documents/${id}`);

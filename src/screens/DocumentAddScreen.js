@@ -12,7 +12,15 @@ import * as ImagePicker from "expo-image-picker";
 import * as DocumentPicker from "expo-document-picker";
 import PrimaryButton from "../components/PrimaryButton";
 import { colors, spacing, type, radius } from "../theme/theme";
-import { analyzeFile, analyzeImages, analyzeText, analyzeWithAttachments, retryDocument, listDocuments } from "../services/api";
+import {
+  analyzeFile,
+  analyzeImages,
+  analyzeText,
+  analyzeWithAttachments,
+  attachmentMimeType,
+  retryDocument,
+  listDocuments,
+} from "../services/api";
 
 const INPUT_METHODS = [
   { id: "camera", label: "사진 촬영", desc: "공지문을 바로 찍어서 추가해요",
@@ -227,22 +235,9 @@ export default function DocumentAddScreen({ navigation }) {
     }
   };
 
-  
-  const pickAttachments = async () => {
-    const result = await DocumentPicker.getDocumentAsync({
-      type: "application/pdf",
-      multiple: true,
-      copyToCacheDirectory: true,
-    });
-
-    if (result.canceled || !result.assets?.length) {
-      return;
-    }
-
-    const selected = result.assets;
-
-    if (selected.some((asset) => !asset.name.toLowerCase().endsWith(".pdf"))) {
-      showError("PDF 파일만 첨부할 수 있습니다.");
+  const addAttachments = (selected) => {
+    if (selected.some((asset) => !attachmentMimeType(asset.name))) {
+      showError("PDF, JPG, PNG, WebP 파일만 첨부할 수 있습니다.");
       return;
     }
 
@@ -266,6 +261,69 @@ export default function DocumentAddScreen({ navigation }) {
     setAttachments(next);
   };
 
+  const pickAttachments = async () => {
+    const result = await DocumentPicker.getDocumentAsync({
+      type: [
+        "application/pdf",
+        "image/jpeg",
+        "image/png",
+        "image/webp",
+      ],
+      multiple: true,
+      copyToCacheDirectory: true,
+    });
+
+    if (result.canceled || !result.assets?.length) {
+      return;
+    }
+
+    addAttachments(result.assets);
+  };
+
+  const pickAttachmentPhotos = async () => {
+    if (!IS_WEB) {
+      const permission =
+        await ImagePicker.requestMediaLibraryPermissionsAsync();
+
+      if (!permission.granted) {
+        showError("사진 접근 권한이 필요합니다.");
+        return;
+      }
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsMultipleSelection: true,
+      quality: 0.8,
+    });
+
+    if (result.canceled || !result.assets?.length) {
+      return;
+    }
+
+    const selected = result.assets.map((asset) => {
+      const originalName =
+        asset.fileName ?? asset.file?.name ?? asset.name;
+
+      let name = originalName;
+
+      if (!attachmentMimeType(name) && asset.mimeType === "image/jpeg") {
+        name = `attachment-photo-${++photoIdCounter.current}.jpg`;
+      }
+
+      if (!name) {
+        const extension =
+          asset.mimeType === "image/png" ? "png" :
+          asset.mimeType === "image/webp" ? "webp" : "jpg";
+
+        name = `attachment-photo-${++photoIdCounter.current}.${extension}`;
+      }
+
+      return { ...asset, name };
+    });
+
+    addAttachments(selected);
+  };
 
   const handlePick = (m) => {
     if (m.id === "camera") return pickCamera();
@@ -566,7 +624,6 @@ export default function DocumentAddScreen({ navigation }) {
               </View>
             </View>
 
-
             <View style={{ marginBottom: spacing.lg }}>
               <Text
                 style={{
@@ -593,7 +650,11 @@ export default function DocumentAddScreen({ navigation }) {
                   }}
                 >
                   <Ionicons
-                    name="document-text-outline"
+                    name={
+                      attachmentMimeType(asset.name) === "application/pdf"
+                        ? "document-text-outline"
+                        : "image-outline"
+                    }
                     size={22}
                     color={colors.stamp}
                   />
@@ -628,12 +689,18 @@ export default function DocumentAddScreen({ navigation }) {
               ))}
 
               <PrimaryButton
-                label="PDF 첨부하기"
+                label="PDF·사진 파일 첨부하기"
                 disabled={attachments.length >= 3}
                 onPress={pickAttachments}
               />
-            </View>
 
+              <PrimaryButton
+                label="앨범에서 사진 추가하기"
+                disabled={attachments.length >= 3}
+                onPress={pickAttachmentPhotos}
+                style={{ marginTop: spacing.sm }}
+              />
+            </View>
 
             {/* 도움말 */}
             <View style={styles.tipBox}>
@@ -646,7 +713,6 @@ export default function DocumentAddScreen({ navigation }) {
                 신청 기간 · 제출 서류 · 제출 방법이 들어 있으면 더 정확하게 분석해요.
               </Text>
             </View>
-
 
             <PrimaryButton
               label={
@@ -668,7 +734,6 @@ export default function DocumentAddScreen({ navigation }) {
                 )
               }
             />
-
 
             {pendingDocumentId && (
               <PrimaryButton
