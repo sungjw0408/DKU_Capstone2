@@ -71,10 +71,19 @@ def _record(doc_id, store):
     return record
 
 
+
 def _response(analysis, store, record=None):
     record = record or _record(analysis.document_id, store)
-    return {"documentId": analysis.document_id, "view": to_analysis_detail(analysis),
-            "analysis": analysis, "plan": record.get("plan"), "sourceKind": record.get("source_kind", "text")}
+    source = store.get_source(analysis.document_id)
+
+    return {
+        "documentId": analysis.document_id,
+        "view": to_analysis_detail(analysis, source),
+        "analysis": analysis,
+        "plan": record.get("plan"),
+        "sourceKind": record.get("source_kind", "text"),
+    }
+
 
 
 def _analysis(doc_id, store):
@@ -246,6 +255,86 @@ def analyze_images(
     return _analyze_saved(doc_id, llm, store)
 
 
+@router.post("/documents/analyze-with-attachments")
+def analyze_with_attachments(
+    text: str = Form(...),
+    files: list[UploadFile] = File(...),
+    store=Depends(user_store),
+):
+    if not text.strip():
+        raise HTTPException(422, "공지 본문을 입력해주세요.")
+
+    if not 1 <= len(files) <= 3:
+        raise HTTPException(
+            422,
+            "첨부 파일은 1개 이상 3개 이하로 올려주세요.",
+        )
+
+    total_bytes = len(text.encode("utf-8"))
+
+    if total_bytes > MAX_UPLOAD_BYTES:
+        raise HTTPException(413, "전체 업로드 용량은 15MB 이하이어야 합니다.")
+
+    attachments = []
+
+    for file in files:
+        filename = file.filename or ""
+
+        if not filename.lower().endswith(".pdf"):
+            raise HTTPException(
+                422,
+                f"지원하지 않는 첨부 파일 형식입니다: {filename}",
+            )
+
+        remaining = MAX_UPLOAD_BYTES - total_bytes
+        data = file.file.read(remaining + 1)
+
+        if not data:
+            raise HTTPException(
+                422,
+                "빈 첨부 파일은 업로드할 수 없습니다.",
+            )
+
+        total_bytes += len(data)
+
+        if total_bytes > MAX_UPLOAD_BYTES:
+            raise HTTPException(
+                413,
+                "전체 업로드 용량은 15MB 이하이어야 합니다.",
+            )
+
+        attachments.append(
+            (data, "application/pdf", filename)
+        )
+
+    llm = get_llm()
+
+    try:
+        source = intake.from_body_and_attachments(
+            text,
+            attachments,
+            llm,
+        )
+    except intake.IntakeError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(501, str(exc)) from exc
+    except genai_errors.APIError as exc:
+        raise HTTPException(
+            503,
+            "첨부 파일의 텍스트 추출에 실패했습니다.",
+        ) from exc
+
+    doc_id = f"doc-{uuid.uuid4().hex}"
+    title = text.strip().splitlines()[0][:500]
+
+    try:
+        store.save_source(doc_id, source, title)
+    except ValueError as exc:
+        raise HTTPException(413, str(exc)) from exc
+
+    return _analyze_saved(doc_id, llm, store)
+
 
 @router.post("/documents/{doc_id}/retry")
 def retry_document(doc_id: str, store=Depends(user_store)):
@@ -338,6 +427,7 @@ def get_source(doc_id: str, store=Depends(user_store)):
         # 원본 이미지로 보여줄 수 있으면 페이지 크기와 근거 위치(페이지 비율 좌표)를 함께 준다
         "pageImages": layout["pages"] if layout else None,
         "highlights": originals.highlights(_original_id(store, doc_id), analysis) if layout and analysis else {},
+        "pageSources": [ item.model_dump() for item in source.page_sources ],
     }
 
 

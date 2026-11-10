@@ -58,6 +58,53 @@ export function analyzeText(text) {
   return request("/api/documents/analyze", { method: "POST", body: form });
 }
 
+
+export async function analyzeWithAttachments(text, assets) {
+  if (!text.trim()) {
+    throw new Error("공지 본문을 입력해주세요.");
+  }
+
+  if (!Array.isArray(assets) || assets.length < 1 || assets.length > 3) {
+    throw new Error("첨부 파일은 1개 이상 3개 이하로 선택해주세요.");
+  }
+
+  const form = new FormData();
+  form.append("text", text);
+
+  for (const asset of assets) {
+    const name = asset.name ?? asset.fileName ?? "attachment.pdf";
+
+    if (!name.toLowerCase().endsWith(".pdf")) {
+      throw new Error(`PDF 파일만 첨부할 수 있습니다: ${name}`);
+    }
+
+    if (Platform.OS === "web") {
+      const blob =
+        asset.file ?? (await (await fetch(asset.uri)).blob());
+
+      form.append("files", blob, name);
+    } else {
+      form.append("files", {
+        uri: asset.uri,
+        name,
+        type: "application/pdf",
+      });
+    }
+  }
+
+  return request(
+    "/api/documents/analyze-with-attachments",
+    {
+      method: "POST",
+      body: form,
+    },
+    {
+      timeoutMs: 300000,
+    }
+  );
+}
+
+
 // expo-image-picker / expo-document-picker 의 asset 을 그대로 넘기면 된다.
 export async function analyzeFile(asset) {
   const isPdf = (asset.mimeType ?? asset.name ?? "").toLowerCase().includes("pdf");

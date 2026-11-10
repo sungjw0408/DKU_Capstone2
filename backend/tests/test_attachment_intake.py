@@ -62,3 +62,54 @@ def test_hwp_is_not_accepted_without_parser():
             [(b"sample", "application/x-hwp", "guide.hwp")],
             MockProvider(),
         )
+
+
+
+def test_analysis_result_contains_attachment_source():
+    from app.schemas import PageSource
+    from app.services import pipeline
+    from app.services.frontend_view import to_analysis_detail
+    from tests.conftest import SAMPLE, NOW
+
+    source = intake.from_text(
+        "장학금 신청 안내입니다.\f" + SAMPLE
+    )
+
+    source.page_sources = [
+        PageSource(
+            kind="body",
+            original_page=1,
+        ),
+        PageSource(
+            kind="attachment",
+            filename="scholarship-guide.pdf",
+            original_page=1,
+        ),
+    ]
+
+    analysis = pipeline.analyze(
+        source,
+        MockProvider(),
+        now=NOW,
+    )
+
+    view = to_analysis_detail(analysis, source)
+
+    attachment_fields = [
+        field
+        for field in analysis.fields
+        if (
+            field.evidence.page == 2
+            and field.status != "unverified"
+            and field.evidence.match_score >= 0.8
+        )
+    ]
+
+    assert attachment_fields
+
+    for field in attachment_fields:
+        origin = view["fieldSources"][field.id]
+
+        assert origin["kind"] == "attachment"
+        assert origin["filename"] == "scholarship-guide.pdf"
+        assert origin["originalPage"] == 1
