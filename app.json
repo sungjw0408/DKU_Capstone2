@@ -10,6 +10,9 @@
       "backgroundColor": "#F7F8FA"
     },
     "assetBundlePatterns": ["**/*"],
+    "plugins": [
+      ["expo-camera", { "recordAudioAndroid": false }]
+    ],
     "ios": {
       "supportsTablet": false
     },

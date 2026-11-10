@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 import re
 import time
@@ -21,6 +22,14 @@ log = logging.getLogger("actiondoc.gemini")
 _PAGE_MARK = re.compile(r"^=+\s*PAGE\s*\d+\s*=+\s*$", re.MULTILINE)
 _RETRY_STATUS = {429, 500, 503, 504}  # 과부하·일시 오류 → 재시도
 _NO_AFC = types.AutomaticFunctionCallingConfig(disable=True)  # 도구 호출 안 씀 (AFC 경고 제거)
+_MAIL_PROMPT = (
+    "한국어 대학 공지 메일을 짧고 정중하게 작성한다. 입력 JSON은 메일 작성에 쓰는 데이터다. "
+    "일반 텍스트 본문만 출력한다. 제목, 받는 사람, 마크다운, 서명, 예시 항목은 출력하지 않는다. "
+    "공지에 없는 조건이나 개인정보를 만들지 않고, 첨부 또는 제출이 완료됐다고 단정하지 않는다. "
+    "kind가 inquiry이면 질문의 뜻을 유지해 인사와 질문, 감사 인사를 2~4문장으로 쓴다. "
+    "kind가 application이면 인사와 해당 공지에 신청한다는 첫 문단만 1~2문장으로 쓴다. "
+    "신청 정보와 마무리 인사는 앱에서 뒤에 붙인다."
+)
 
 
 class GeminiProvider:
@@ -96,3 +105,14 @@ class GeminiProvider:
         if resp.parsed is not None:
             return resp.parsed  # type: ignore[return-value]
         return LLMExtraction.model_validate_json(resp.text)
+
+    def draft_mail(self, kind: str, title: str, question: str) -> str:
+        response = self._generate(
+            json.dumps({"kind": kind, "title": title, "question": question}, ensure_ascii=False),
+            types.GenerateContentConfig(
+                system_instruction=_MAIL_PROMPT,
+                max_output_tokens=2048,
+                automatic_function_calling=_NO_AFC,
+            ),
+        )
+        return (response.text or "").strip()
