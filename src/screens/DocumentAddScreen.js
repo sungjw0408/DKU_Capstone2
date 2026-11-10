@@ -7,9 +7,11 @@ import { useFocusEffect } from "@react-navigation/native";
 import { View, Pressable, StyleSheet, ActivityIndicator, Alert, Platform, KeyboardAvoidingView, ScrollView } from "react-native";
 import ScreenSurface from "../components/ScreenSurface";
 import { Ionicons } from "@expo/vector-icons";
+import { requireOptionalNativeModule } from "expo";
 import * as ImagePicker from "expo-image-picker";
 import * as DocumentPicker from "expo-document-picker";
 import PrimaryButton from "../components/PrimaryButton";
+import AndroidDocumentCamera from "../components/AndroidDocumentCamera";
 import { colors, spacing, type, radius } from "../theme/theme";
 import { analyzeFile, analyzeText, retryDocument, listDocuments } from "../services/api";
 
@@ -76,12 +78,16 @@ export default function DocumentAddScreen({ navigation }) {
   const [text, setText] = useState("");
   const [focused, setFocused] = useState(false);
   const [pendingDocumentId, setPendingDocumentId] = useState(null);
+  const [androidCamera, setAndroidCamera] = useState(null);
+  const cameraBusy = useRef(false);
   const timer = useRef(null);
 
   useEffect(() => () => clearInterval(timer.current), []);
 
   const stages = (kind) => (kind === "image" ? IMAGE_STAGES : STAGES);
   const [stageList, setStageList] = useState(STAGES);
+
+  useFocusEffect(useCallback(() => () => setAndroidCamera(null), []));
 
   useFocusEffect(useCallback(() => {
     let active = true;
@@ -115,10 +121,32 @@ export default function DocumentAddScreen({ navigation }) {
 
   const pickCamera = async () => {
     if (IS_WEB) return showError("사진 촬영은 휴대폰 앱(Expo Go)에서만 사용할 수 있어요. 웹에서는 '앨범에서 선택'으로 사진 파일을 올려 주세요.");
-    const perm = await ImagePicker.requestCameraPermissionsAsync();
-    if (!perm.granted) return showError("카메라 권한이 필요해요. 설정에서 허용해 주세요.");
-    const r = await ImagePicker.launchCameraAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 0.8 });
-    if (!r.canceled) run(() => analyzeFile(r.assets[0]), { kind: "image", uri: r.assets[0].uri });
+    if (cameraBusy.current) return;
+    cameraBusy.current = true;
+    try {
+      if (Platform.OS === "android") {
+        // 이전 개발 빌드에서는 다른 문서 추가 기능을 계속 쓸 수 있게 한다.
+        if (!requireOptionalNativeModule("ExpoCamera")) {
+          return Alert.alert("카메라를 사용할 수 없어요", "새 Android 앱 빌드를 설치하거나 앨범에서 사진을 선택해 주세요.");
+        }
+        const camera = require("expo-camera");
+        const permission = await camera.Camera.requestCameraPermissionsAsync();
+        if (!permission.granted) return Alert.alert("카메라 권한이 필요해요", "설정에서 똑독의 카메라 권한을 허용해 주세요.");
+        if (navigation.isFocused()) setAndroidCamera({ View: camera.CameraView });
+        return;
+      }
+      const permission = await ImagePicker.requestCameraPermissionsAsync();
+      if (!permission.granted) return Alert.alert("카메라 권한이 필요해요", "설정에서 똑독의 카메라 권한을 허용해 주세요.");
+      const result = await ImagePicker.launchCameraAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 0.8 });
+      if (!result.canceled && result.assets[0]) {
+        const asset = result.assets[0];
+        run(() => analyzeFile(asset), { kind: "image", uri: asset.uri });
+      }
+    } catch {
+      Alert.alert("카메라를 열지 못했어요", "다시 시도하거나 앨범에서 사진을 선택해 주세요.");
+    } finally {
+      cameraBusy.current = false;
+    }
   };
 
   const pickLibrary = async () => {
@@ -227,6 +255,11 @@ export default function DocumentAddScreen({ navigation }) {
 
   return (
     <ScreenSurface style={styles.safe} edges={["top"]}>
+      {androidCamera && <AndroidDocumentCamera CameraView={androidCamera.View} onClose={() => setAndroidCamera(null)}
+        onUsePhoto={(photo) => {
+          setAndroidCamera(null);
+          run(() => analyzeFile({ uri: photo.uri, mimeType: "image/jpeg" }), { kind: "image", uri: photo.uri });
+        }} />}
       <ScrollView contentContainerStyle={styles.container}>
         <Text style={type.h1}>문서 추가하기</Text>
         <Text style={styles.subtitle}>사진·PDF·텍스트로 문서를 추가할 수 있어요</Text>
