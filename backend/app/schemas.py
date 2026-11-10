@@ -142,6 +142,7 @@ class PageSource(BaseModel):
     kind: Literal["body", "attachment"]
     filename: Optional[str] = None
     original_page: int
+    attachment_index: Optional[int] = None
 
 class SourceDocument(BaseModel):
     source_kind: Literal["text", "pdf", "image"]

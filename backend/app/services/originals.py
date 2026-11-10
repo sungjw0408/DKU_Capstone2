@@ -20,7 +20,7 @@ from pathlib import Path
 from rapidfuzz import fuzz
 
 from app.config import get_settings
-from app.schemas import AnalysisResult, LLMLine
+from app.schemas import AnalysisResult, LLMLine, SourceDocument
 
 _SAFE_ID = re.compile(r"^[A-Za-z0-9_-]+$")
 _SKIP = re.compile(r"[\s\"'“”‘’`·•▶▷■□◆◇○●※]")  # utils.text.normalize 와 같은 문자 집합
@@ -434,6 +434,141 @@ def _images_meta(doc_id: str) -> dict | None:
     except (OSError, ValueError, AttributeError):
         return None
 
+
+
+def _mixed_meta_path(doc_id: str) -> Path | None:
+    if not _SAFE_ID.fullmatch(doc_id):
+        return None
+    return _dir() / f"{doc_id}.mixed.json"
+
+
+def _mixed_meta(doc_id: str) -> dict | None:
+    path = _mixed_meta_path(doc_id)
+
+    if not path or not path.exists():
+        return None
+
+    try:
+        meta = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(meta.get("pages"), list):
+            return None
+        return meta
+    except (OSError, ValueError, AttributeError):
+        return None
+
+
+def save_mixed_attachments(
+    doc_id: str,
+    attachments: list[tuple[bytes, str, str]],
+    source: SourceDocument,
+) -> None:
+    meta_path = _mixed_meta_path(doc_id)
+
+    if meta_path is None:
+        return
+
+    if len(source.page_sources) != len(source.pages):
+        raise ValueError("원문 페이지와 출처 정보의 수가 다릅니다.")
+
+    pdf_layouts = {}
+    image_originals = {}
+
+    for index, (data, mime, filename) in enumerate(attachments):
+        if filename.lower().endswith(".pdf"):
+            original_id = f"{doc_id}-attachment-{index}"
+            save_pdf(original_id, data)
+
+            pdf_layouts[index] = {
+                "id": original_id,
+                "layout": _pdf_layout(original_id),
+            }
+            continue
+
+        size = _image_size(data)
+        ext = _IMG_EXT.get(mime)
+
+        if not size or not ext or min(size) <= 0:
+            image_originals[index] = None
+            continue
+
+        width, height = size
+
+        if _exif_orientation(data) in (5, 6, 7, 8):
+            width, height = height, width
+
+        original_file = f"{doc_id}.attachment-{index}.{ext}"
+        (_dir() / original_file).write_bytes(data)
+
+        image_originals[index] = {
+            "kind": "image",
+            "file": original_file,
+            "mime": mime,
+            "width": width,
+            "height": height,
+        }
+
+    pages = []
+    image_lines = source._image_lines_by_page or []
+
+    for page_index, origin in enumerate(source.page_sources):
+        if origin.kind == "body":
+            pages.append(None)
+            continue
+
+        index = origin.attachment_index
+
+        if index is None or not 0 <= index < len(attachments):
+            raise ValueError("첨부 파일의 출처 정보가 올바르지 않습니다.")
+
+        if index in pdf_layouts:
+            pdf_info = pdf_layouts[index]
+            layout = pdf_info["layout"]
+            original_page = origin.original_page
+
+            if (
+                layout is None
+                or not 1 <= original_page <= len(layout["pages"])
+            ):
+                pages.append(None)
+                continue
+
+            size = layout["pages"][original_page - 1]
+
+            pages.append({
+                "kind": "pdf",
+                "id": pdf_info["id"],
+                "original_page": original_page,
+                "width": size["width"],
+                "height": size["height"],
+            })
+            continue
+
+        image_info = image_originals.get(index)
+
+        if image_info is None:
+            pages.append(None)
+            continue
+
+        lines = (
+            image_lines[page_index]
+            if page_index < len(image_lines)
+            else None
+        )
+
+        pages.append({
+            **image_info,
+            "lines": [
+                line.model_dump()
+                for line in (lines or [])
+            ],
+        })
+
+    meta_path.write_text(
+        json.dumps({"pages": pages}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+
 def _image_highlights(meta: dict, analysis: AnalysisResult) -> dict[str, dict]:
     """줄별 상자를 이어 붙인 문자열에서 근거 문장을 찾아, 걸친 줄마다 글자 비율만큼 박스를 만든다."""
     hay, owner, pos_in_line, line_len = [], [], [], []
@@ -477,6 +612,20 @@ def _image_highlights(meta: dict, analysis: AnalysisResult) -> dict[str, dict]:
 
 # ─────────────────────────── 공개 함수 (PDF / 이미지 공통) ───────────────────────────
 def page_layout(doc_id: str) -> dict | None:
+    mixed = _mixed_meta(doc_id)
+
+    if mixed is not None:
+        return {
+            "pages": [
+                {
+                    "width": page["width"],
+                    "height": page["height"],
+                }
+                if page is not None else None
+                for page in mixed["pages"]
+            ]
+        }
+
     """PDF, 단일 사진, 다중 사진의 페이지 크기를 반환한다."""
 
     multiple = _images_meta(doc_id)
@@ -509,6 +658,8 @@ def page_layout(doc_id: str) -> dict | None:
 
 
 def highlights(doc_id: str, analysis: AnalysisResult) -> dict[str, dict]:
+    if _mixed_meta(doc_id) is not None:
+        return {}
     """원본 이미지에서 근거 문장의 위치를 계산한다."""
 
     multiple = _images_meta(doc_id)
@@ -553,12 +704,42 @@ def highlights(doc_id: str, analysis: AnalysisResult) -> dict[str, dict]:
 
 
 
+
 def page_image(
     doc_id: str,
     page_no: int,
     width: int = 1000,
 ) -> tuple[bytes, str] | None:
     """요청한 페이지의 원본 이미지를 반환한다."""
+    
+    mixed = _mixed_meta(doc_id)
+
+    if mixed is not None:
+        pages = mixed["pages"]
+
+        if not 1 <= page_no <= len(pages):
+            return None
+
+        page = pages[page_no - 1]
+
+        if page is None:
+            return None
+
+        if page["kind"] == "pdf":
+            png = render_png(
+                page["id"],
+                page["original_page"],
+                width,
+            )
+            return (png, "image/png") if png else None
+
+        path = _dir() / page["file"]
+
+        if not path.exists():
+            return None
+
+        return path.read_bytes(), page["mime"]
+
 
     multiple = _images_meta(doc_id)
 
@@ -597,7 +778,8 @@ def delete_originals(doc_id: str) -> int:
 
     deleted = 0
 
-    for path in _dir().glob(f"{doc_id}.*"):
+    for path in list(_dir().glob(f"{doc_id}.*")) + list(
+        _dir().glob(f"{doc_id}-attachment-*")):
         try:
             path.unlink()
             deleted += 1

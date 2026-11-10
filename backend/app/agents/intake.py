@@ -106,6 +106,7 @@ def from_images(
     return source
 
 
+
 def from_body_and_attachments(
     body: str,
     attachments: list[tuple[bytes, str, str]],
@@ -130,17 +131,52 @@ def from_body_and_attachments(
         for index in range(1, len(body_source.pages) + 1)
     ]
 
+    image_lines_by_page = [None] * len(body_source.pages)
     masked_count = body_source.masked_count
 
-    for data, mime_type, filename in attachments:
-        name = filename.replace("\\", "/").split("/")[-1]
+    image_types = {
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".png": "image/png",
+        ".webp": "image/webp",
+    }
 
-        if not name.lower().endswith(".pdf"):
-            raise IntakeError(
-                f"현재 지원하지 않는 첨부 파일 형식입니다: {name}"
+    for attachment_index, (data, mime_type, filename) in enumerate(attachments):
+        name = filename.replace("\\", "/").split("/")[-1]
+        lower_name = name.lower()
+
+        if lower_name.endswith(".pdf"):
+            if mime_type not in ("application/pdf", "application/octet-stream", ""):
+                raise IntakeError(f"파일 형식이 일치하지 않습니다: {name}")
+
+            attachment_source = from_pdf(data, llm)
+            image_lines = None
+
+        else:
+            image_mime = next(
+                (
+                    value
+                    for extension, value in image_types.items()
+                    if lower_name.endswith(extension)
+                ),
+                None,
             )
 
-        attachment_source = from_pdf(data, llm)
+            if image_mime is None:
+                raise IntakeError(
+                    f"지원하지 않는 첨부 파일 형식입니다: {name}"
+                )
+
+            if mime_type not in (
+                image_mime,
+                "image/jpg" if image_mime == "image/jpeg" else image_mime,
+                "application/octet-stream",
+                "",
+            ):
+                raise IntakeError(f"파일 형식이 일치하지 않습니다: {name}")
+
+            attachment_source = from_image(data, image_mime, llm)
+            image_lines = attachment_source._image_lines
 
         for index, page_text in enumerate(
             attachment_source.pages,
@@ -153,17 +189,27 @@ def from_body_and_attachments(
                     kind="attachment",
                     filename=name,
                     original_page=index,
+                    attachment_index=attachment_index,
                 )
+            )
+
+            image_lines_by_page.append(
+                image_lines if index == 1 else None
             )
 
         masked_count += attachment_source.masked_count
 
-    return SourceDocument(
+    source = SourceDocument(
         source_kind="text",
         pages=pages,
         masked_count=masked_count,
         page_sources=page_sources,
     )
+
+    source._image_lines_by_page = image_lines_by_page
+
+    return source
+
 
 
 def from_upload(data: bytes, mime_type: str, filename: str, llm: LLMProvider) -> SourceDocument:

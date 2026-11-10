@@ -6,6 +6,12 @@ from reportlab.pdfgen import canvas
 
 from app.agents import intake
 from app.llm.mock import MockProvider
+from app.schemas import LLMLine
+
+from PIL import Image
+
+from app.config import get_settings
+from app.services import originals
 
 
 def make_pdf():
@@ -113,3 +119,126 @@ def test_analysis_result_contains_attachment_source():
         assert origin["kind"] == "attachment"
         assert origin["filename"] == "scholarship-guide.pdf"
         assert origin["originalPage"] == 1
+
+
+class FakeAttachmentOCR(MockProvider):
+    def transcribe_lines(self, data, mime_type):
+        return [
+            LLMLine(
+                text="신청 마감: 2026년 11월 30일",
+                box_2d=[100, 100, 180, 900],
+            )
+        ]
+
+
+def test_mixed_pdf_and_image_attachments():
+    source = intake.from_body_and_attachments(
+        "장학금 신청 안내",
+        [
+            (
+                make_pdf(),
+                "application/pdf",
+                "application-guide.pdf",
+            ),
+            (
+                b"mock-image",
+                "image/png",
+                "deadline.png",
+            ),
+        ],
+        FakeAttachmentOCR(),
+    )
+
+    assert len(source.pages) == 3
+    assert len(source.page_sources) == 3
+
+    assert source.page_sources[0].kind == "body"
+
+    assert source.page_sources[1].filename == "application-guide.pdf"
+    assert source.page_sources[1].attachment_index == 0
+
+    assert source.page_sources[2].filename == "deadline.png"
+    assert source.page_sources[2].attachment_index == 1
+
+    assert "Required documents" in source.pages[1]
+    assert "신청 마감" in source.pages[2]
+
+    assert source._image_lines_by_page[0] is None
+    assert source._image_lines_by_page[1] is None
+    assert source._image_lines_by_page[2][0].box_2d == [
+        100, 100, 180, 900
+    ]
+
+
+def test_mixed_attachment_original_pages(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        get_settings(),
+        "originals_dir",
+        str(tmp_path),
+    )
+
+    image_buffer = io.BytesIO()
+    Image.new("RGB", (200, 300), "white").save(
+        image_buffer,
+        format="PNG",
+    )
+    image_data = image_buffer.getvalue()
+
+    attachments = [
+        (
+            make_pdf(),
+            "application/pdf",
+            "guide.pdf",
+        ),
+        (
+            image_data,
+            "image/png",
+            "notice.png",
+        ),
+    ]
+
+    source = intake.from_body_and_attachments(
+        "장학금 신청 안내",
+        attachments,
+        FakeAttachmentOCR(),
+    )
+
+    doc_id = "mixed-attachment-test"
+
+    originals.save_mixed_attachments(
+        doc_id,
+        attachments,
+        source,
+    )
+
+    layout = originals.page_layout(doc_id)
+
+    assert layout is not None
+    assert len(layout["pages"]) == 3
+
+    assert layout["pages"][0] is None
+    assert layout["pages"][1]["width"] > 0
+    assert layout["pages"][1]["height"] > 0
+
+    assert layout["pages"][2] == {
+        "width": 200,
+        "height": 300,
+    }
+
+    assert originals.page_image(doc_id, 1) is None
+
+    pdf_page = originals.page_image(doc_id, 2)
+    assert pdf_page is not None
+    assert pdf_page[1] == "image/png"
+    assert pdf_page[0].startswith(b"\x89PNG")
+
+    photo_page = originals.page_image(doc_id, 3)
+    assert photo_page is not None
+    assert photo_page[0] == image_data
+    assert photo_page[1] == "image/png"
+
+    assert originals.page_image(doc_id, 4) is None
+
+    originals.delete_originals(doc_id)
+
+    assert not list(tmp_path.glob(f"{doc_id}*"))
