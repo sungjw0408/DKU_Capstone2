@@ -24,6 +24,14 @@ from app.utils.text import split_sentences
 
 router = APIRouter(prefix="/api")
 MAX_UPLOAD_BYTES = 15 * 1024 * 1024
+MAX_IMAGE_FILES = 5
+ATTACHMENT_TYPES = {
+    ".pdf": "application/pdf",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".png": "image/png",
+    ".webp": "image/webp",
+}
 
 
 def user_store(uid: str = Depends(active_uid)):
@@ -78,10 +86,19 @@ def _record(doc_id, store):
     return record
 
 
+
 def _response(analysis, store, record=None):
     record = record or _record(analysis.document_id, store)
-    return {"documentId": analysis.document_id, "view": to_analysis_detail(analysis),
-            "analysis": analysis, "plan": record.get("plan"), "sourceKind": record.get("source_kind", "text")}
+    source = store.get_source(analysis.document_id)
+
+    return {
+        "documentId": analysis.document_id,
+        "view": to_analysis_detail(analysis, source),
+        "analysis": analysis,
+        "plan": record.get("plan"),
+        "sourceKind": record.get("source_kind", "text"),
+    }
+
 
 
 def _analysis(doc_id, store):
@@ -143,6 +160,230 @@ def analyze_document(file: Optional[UploadFile] = File(None), text: Optional[str
     except ValueError as exc:
         raise HTTPException(413, str(exc)) from exc
     _save_original(doc_id, data, file, source, store)
+    return _analyze_saved(doc_id, llm, store)
+
+
+@router.post("/documents/analyze-images")
+def analyze_images(
+    files: list[UploadFile] = File(...),
+    store=Depends(user_store),
+):
+    """여러 장의 사진을 하나의 공지로 분석한다."""
+
+    if not 2 <= len(files) <= MAX_IMAGE_FILES:
+        raise HTTPException(
+            422,
+            f"사진은 2장 이상 {MAX_IMAGE_FILES}장 이하로 올려주세요.",
+        )
+
+    images = []
+    total_bytes = 0
+
+    for file in files:
+        raw_mime = (file.content_type or "").lower()
+        filename = (file.filename or "").lower()
+
+        # 정상적인 이미지 MIME 또는 이미지 확장자 허용
+        # 확장자 추론은 MIME이 비어 있거나 octet-stream일 때만 수행
+        allowed_exts = (
+            ".jpg", ".jpeg", ".png",
+            ".webp", ".heic", ".heif",
+        )
+        supported = intake.SUPPORTED_IMAGE_TYPES
+
+        mime = image_mime(file)
+
+        valid = (
+            raw_mime in supported
+            or raw_mime == "image/jpg"
+            or (
+                raw_mime in ("", "application/octet-stream")
+                and filename.endswith(allowed_exts)
+            )
+        )
+
+        if not valid or mime not in supported:
+            raise HTTPException(
+                422,
+                f"지원하지 않는 이미지 형식입니다: {file.filename}",
+            )
+
+        # 전체 업로드 용량을 15MB 이하로 제한
+        remaining = MAX_UPLOAD_BYTES - total_bytes
+        data = file.file.read(remaining + 1)
+
+        if not data:
+            raise HTTPException(
+                422,
+                "빈 사진 파일은 업로드할 수 없습니다.",
+            )
+
+        total_bytes += len(data)
+
+        if total_bytes > MAX_UPLOAD_BYTES:
+            raise HTTPException(
+                413,
+                "전체 사진 용량은 15MB 이하이어야 합니다.",
+            )
+
+        images.append((data, mime))
+
+    llm = get_llm()
+
+    try:
+        source = intake.from_images(images, llm)
+
+    except intake.IntakeError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+    except RuntimeError as exc:
+        raise HTTPException(501, str(exc)) from exc
+
+    except genai_errors.APIError as exc:
+        raise HTTPException(
+            503,
+            "사진에서 텍스트를 추출하지 못했습니다.",
+        ) from exc
+
+    # 모든 사진을 하나의 문서로 저장
+    doc_id = f"doc-{uuid.uuid4().hex}"
+    title = f"사진 공지 ({len(files)}페이지)"
+
+    try:
+        store.save_source(doc_id, source, title)
+
+    except ValueError as exc:
+        raise HTTPException(413, str(exc)) from exc
+
+    # 다중 사진 원본과 페이지별 위치 정보 저장
+    try:
+        originals.save_images(
+            _original_id(store, doc_id),
+            images,
+            source._image_lines_by_page,
+        )
+    except OSError:
+        # 원본 저장 실패 시 텍스트 원문으로 대체
+        pass
+
+    # 기존 분석 파이프라인 사용
+    return _analyze_saved(doc_id, llm, store)
+
+
+@router.post("/documents/analyze-with-attachments")
+def analyze_with_attachments(
+    text: str = Form(...),
+    files: list[UploadFile] = File(...),
+    store=Depends(user_store),
+):
+    if not text.strip():
+        raise HTTPException(422, "공지 본문을 입력해주세요.")
+
+    if not 1 <= len(files) <= 3:
+        raise HTTPException(
+            422,
+            "첨부 파일은 1개 이상 3개 이하로 올려주세요.",
+        )
+
+    total_bytes = len(text.encode("utf-8"))
+
+    if total_bytes > MAX_UPLOAD_BYTES:
+        raise HTTPException(413, "전체 업로드 용량은 15MB 이하이어야 합니다.")
+
+    attachments = []
+
+    for file in files:
+        filename = file.filename or ""
+
+
+        extension = (
+            "." + filename.rsplit(".", 1)[-1].lower()
+            if "." in filename
+            else ""
+        )
+
+        mime_type = ATTACHMENT_TYPES.get(extension)
+
+        if mime_type is None:
+            raise HTTPException(
+                422,
+                f"지원하지 않는 첨부 파일 형식입니다: {filename}",
+            )
+
+        provided_mime = (file.content_type or "").lower()
+
+        allowed_mimes = {
+            "",
+            "application/octet-stream",
+            mime_type,
+        }
+
+        if mime_type == "image/jpeg":
+            allowed_mimes.add("image/jpg")
+
+        if provided_mime not in allowed_mimes:
+            raise HTTPException(
+                422,
+                f"파일 형식이 일치하지 않습니다: {filename}",
+            )
+
+
+        remaining = MAX_UPLOAD_BYTES - total_bytes
+        data = file.file.read(remaining + 1)
+
+        if not data:
+            raise HTTPException(
+                422,
+                "빈 첨부 파일은 업로드할 수 없습니다.",
+            )
+
+        total_bytes += len(data)
+
+        if total_bytes > MAX_UPLOAD_BYTES:
+            raise HTTPException(
+                413,
+                "전체 업로드 용량은 15MB 이하이어야 합니다.",
+            )
+
+        attachments.append(
+            (data, mime_type, filename)
+        )
+
+    llm = get_llm()
+
+    try:
+        source = intake.from_body_and_attachments(
+            text,
+            attachments,
+            llm,
+        )
+    except intake.IntakeError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(501, str(exc)) from exc
+    except genai_errors.APIError as exc:
+        raise HTTPException(
+            503,
+            "첨부 파일의 텍스트 추출에 실패했습니다.",
+        ) from exc
+
+    doc_id = f"doc-{uuid.uuid4().hex}"
+    title = text.strip().splitlines()[0][:500]
+
+    try:
+        store.save_source(doc_id, source, title)
+    except ValueError as exc:
+        raise HTTPException(413, str(exc)) from exc
+
+    try:
+        originals.save_mixed_attachments(
+            _original_id(store, doc_id),
+            attachments,
+            source,
+        )
+    except OSError:
+        pass
+
     return _analyze_saved(doc_id, llm, store)
 
 
@@ -237,6 +478,7 @@ def get_source(doc_id: str, store=Depends(user_store)):
         # 원본 이미지로 보여줄 수 있으면 페이지 크기와 근거 위치(페이지 비율 좌표)를 함께 준다
         "pageImages": layout["pages"] if layout else None,
         "highlights": originals.highlights(_original_id(store, doc_id), analysis) if layout and analysis else {},
+        "pageSources": [ item.model_dump() for item in source.page_sources ],
     }
 
 

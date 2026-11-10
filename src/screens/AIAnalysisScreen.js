@@ -88,7 +88,39 @@ const SECTION_ICONS = {
   confirmed: "checkmark-circle",
 };
 
-function SectionRow({ section, isLast }) {
+
+function attachmentSourceLabel(fieldSources, fieldIds) {
+  const sources = fieldIds
+    .map((id) => fieldSources?.[id])
+    .filter(Boolean);
+
+  const attachments = [
+    ...new Set(
+      sources
+        .filter((source) => source.kind === "attachment")
+        .map((source) =>
+          `${source.filename} (${source.originalPage}페이지)`
+        )
+    ),
+  ];
+
+  if (attachments.length === 0) {
+    return null;
+  }
+
+  const hasBody = sources.some(
+    (source) => source.kind === "body"
+  );
+
+  const prefix = hasBody
+    ? "본문 및 첨부 파일에서 찾음"
+    : "첨부 파일에서 찾음";
+
+  return `${prefix} · ${attachments.join(", ")}`;
+}
+
+
+function SectionRow({ section, isLast, fieldSources }) {
   const multi = section.items.length > 1;
   return (
     <View style={[styles.row, !isLast && styles.rowDivider]}>
@@ -106,6 +138,17 @@ function SectionRow({ section, isLast }) {
           {multi && <View style={styles.bulletDot} />}
           <View style={styles.itemContent}>
             <Text style={styles.itemText}>{it.text}</Text>
+            {attachmentSourceLabel(
+              fieldSources,
+              it.relatedFieldIds ?? [it.fieldId]
+            ) && (
+              <Text style={styles.sourceNote}>
+                {attachmentSourceLabel(
+                  fieldSources,
+                  it.relatedFieldIds ?? [it.fieldId]
+                )}
+              </Text>
+            )}
             {it.status === "user_confirmed" && <Badge label="사용자가 직접 확인한 문항" tone="green" />}
           </View>
         </View>
@@ -230,6 +273,11 @@ export default function AIAnalysisScreen({ navigation, route }) {
                 <View style={styles.reviewItemBody}>
                   <Text style={styles.reviewLabel}>{field.label} · {field.status === "unverified" ? "근거 없음" : "확인 필요"}</Text>
                   <Text style={styles.reviewValue}>{field.value}</Text>
+                  {attachmentSourceLabel(d.fieldSources, [field.id]) && (
+                    <Text style={styles.sourceNote}>
+                      {attachmentSourceLabel(d.fieldSources, [field.id])}
+                    </Text>
+                  )}
                 </View>
                 <Ionicons name="chevron-forward" size={16} color={evidenceReviewColors.ink} />
               </Pressable>
@@ -259,7 +307,7 @@ export default function AIAnalysisScreen({ navigation, route }) {
               <Text style={styles.itemText}>추출된 정보가 없어요. 원문을 확인해 주세요.</Text>
             )}
             {normalSections.map((s, i) => (
-              <SectionRow key={s.key} section={s} isLast={i === normalSections.length - 1} />
+              <SectionRow key={s.key} section={s} isLast={i === normalSections.length - 1} fieldSources={d.fieldSources}/>
             ))}
           </Card>
         )}
@@ -414,5 +462,11 @@ const styles = StyleSheet.create({
     backgroundColor: colors.stampSoft,
     alignItems: "center",
     justifyContent: "center",
+  },
+  sourceNote: {
+    fontSize: 12,
+    lineHeight: 18,
+    color: colors.muted,
+    marginTop: 4,
   },
 });

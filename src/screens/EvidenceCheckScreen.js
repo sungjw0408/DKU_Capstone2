@@ -1,3 +1,4 @@
+
 import { pageContent } from "../theme/theme";
 import { Text } from "../components/Typography";
 // 담당자 3 (원문 근거 확인 / 검증 흐름) 소유
@@ -277,8 +278,8 @@ export default function EvidenceCheckScreen({ navigation, route }) {
     };
   }, [documentId]);
 
-  const imageMode = !!source?.pageImages?.length;
-  const pageCount = imageMode ? source.pageImages.length : source?.pages?.length ?? 0;
+  const pageCount = source?.pages?.length ?? 0;
+  const imageMode = Boolean(source?.pageImages?.[page - 1]);
   useEffect(() => setZoomIdx(imageMode ? 1 : 0), [imageMode]);
 
   const tabs = [{ key: "all", title: "전체" }, ...GROUPS.filter((g) => byGroup[g.key])];
@@ -294,18 +295,37 @@ export default function EvidenceCheckScreen({ navigation, route }) {
 
   // 페이지별 하이라이트
   const ranges = useMemo(
-    () => (source && !imageMode ? textRanges(source.excerptOnly ? [] : fields, source.pages) : {}),
-    [source, fields, imageMode]
+    () => (
+      source
+        ? textRanges(source.excerptOnly ? [] : fields, source.pages)
+        : {}
+    ),
+    [source, fields]
   );
+
   const shownIds = tab === "all" ? fields.map((f) => f.id) : items.flatMap((it) => it.fields.map((f) => f.id));
-  const locate = (fid) => (imageMode ? source?.highlights?.[fid] : ranges[fid]);
-  const pageOf = (fid) => locate(fid)?.page ?? fields.find((f) => f.id === fid)?.evidence?.page ?? null;
+
+  const locate = (fid) => {
+    const highlight = source?.highlights?.[fid];
+
+    if (highlight && source?.pageImages?.[highlight.page - 1]) {
+      return highlight;
+    }
+
+    return ranges[fid];
+  };
+
+  const pageOf = (fid) =>
+    locate(fid)?.page ??
+    fields.find((f) => f.id === fid)?.evidence?.page ??
+    null;
 
   const boxesOn = (p) =>
     shownIds.flatMap((id) => {
       const h = source?.highlights?.[id];
       return h && h.page === p ? h.rects.map((rect) => ({ id, rect, review: reviewIds.has(id) })) : [];
     });
+
   const rangesOn = (p) =>
     shownIds.map((id) => ranges[id] && ranges[id].page === p && { id, ...ranges[id], review: reviewIds.has(id) }).filter(Boolean);
 
@@ -317,33 +337,74 @@ export default function EvidenceCheckScreen({ navigation, route }) {
 
   const zoom = ZOOMS[zoomIdx];
   const paperW = Math.max(areaW - 24, 0) * zoom;
-  const pageSize = imageMode ? source.pageImages[page - 1] : null;
+  const pageSize = source?.pageImages?.[page - 1] ?? null;
   const paperH = pageSize ? (paperW * pageSize.height) / pageSize.width : null;
 
   // 선택한 근거가 보이도록 스크롤
   const scrollToFocus = () => {
-    const id = focusIds.find((fid) => locate(fid)?.page === page);
+    const id = focusIds.find((fid) =>
+      (
+        imageMode
+          ? source?.highlights?.[fid]
+          : ranges[fid]
+      )?.page === page
+    );
+
     if (!id) {
       vScroll.current?.scrollTo({ y: 0, animated: false });
       hScroll.current?.scrollTo({ x: 0, animated: false });
       return;
     }
+
     if (imageMode) {
-      const r = source.highlights[id].rects[0];
-      vScroll.current?.scrollTo({ y: Math.max(r[1] * paperH - 60, 0), animated: true });
-      hScroll.current?.scrollTo({ x: Math.max(r[0] * paperW - 16, 0), animated: true });
-    } else {
-      const r = ranges[id];
-      const prefix = `${page}:${zoomIdx}:`;
-      const line = Object.entries(lineYs.current).find(([k]) => {
-        if (!k.startsWith(prefix)) return false;
-        const [s, e] = k.slice(prefix.length).split("-").map(Number);
-        return r.start >= s && r.start <= e;
+      const rect = source?.highlights?.[id]?.rects?.[0];
+
+      if (!rect || !paperH) {
+        vScroll.current?.scrollTo({ y: 0, animated: false });
+        hScroll.current?.scrollTo({ x: 0, animated: false });
+        return;
+      }
+
+      vScroll.current?.scrollTo({
+        y: Math.max(rect[1] * paperH - 60, 0),
+        animated: true,
       });
-      if (line) vScroll.current?.scrollTo({ y: Math.max(line[1] - 60, 0), animated: true });
+
+      hScroll.current?.scrollTo({
+        x: Math.max(rect[0] * paperW - 16, 0),
+        animated: true,
+      });
+    } else {
+      const range = ranges[id];
+
+      if (!range) {
+        return;
+      }
+
+      const prefix = `${page}:${zoomIdx}:`;
+
+      const line = Object.entries(lineYs.current).find(([key]) => {
+        if (!key.startsWith(prefix)) return false;
+
+        const [start, end] = key
+          .slice(prefix.length)
+          .split("-")
+          .map(Number);
+
+        return range.start >= start && range.start <= end;
+      });
+
+      if (line) {
+        vScroll.current?.scrollTo({
+          y: Math.max(line[1] - 60, 0),
+          animated: true,
+        });
+      }
+
       hScroll.current?.scrollTo({ x: 0, animated: true });
     }
   };
+
   useEffect(() => {
     const t = setTimeout(scrollToFocus, 120);
     return () => clearTimeout(t);
@@ -615,13 +676,13 @@ export default function EvidenceCheckScreen({ navigation, route }) {
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.thumbs}>
             {Array.from({ length: pageCount }, (_, i) => i + 1).map((p) => {
               const on = p === page;
-              const size = imageMode ? source.pageImages[p - 1] : null;
+              const size = source?.pageImages?.[p - 1] ?? null;
               const tw = THUMB_W - 4;
               const th = size ? Math.min((tw * size.height) / size.width, THUMB_H - 4) : THUMB_H - 4;
               return (
                 <Pressable key={p} onPress={() => goPage(p)} style={styles.thumbWrap}>
                   <View style={[styles.thumb, on && styles.thumbOn]}>
-                    {imageMode ? (
+                    {size ? (
                       <View style={{ width: tw, height: th }}>
                         <AuthenticatedPageImage documentId={documentId} page={p} width={200} style={{ width: tw, height: th }} />
                         <Boxes boxes={boxesOn(p)} focusIds={focusIds} showAll width={tw} height={th} />

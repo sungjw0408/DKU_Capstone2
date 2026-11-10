@@ -27,7 +27,7 @@ globalThis.notificationTest = {
 };
 
 const source = (await readFile(new URL("../src/services/notifications.js", import.meta.url), "utf8"))
-  .replace(/^import .*;\n/gm, "");
+  .replace(/^import .*;\r?\n/gm, "");
 const mocks = [
   "const { Notifications, AppState, AsyncStorage, currentAuthUser } = globalThis.notificationTest;",
   "const Platform = { OS: 'ios' };",
