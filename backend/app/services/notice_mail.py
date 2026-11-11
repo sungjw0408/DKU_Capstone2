@@ -93,17 +93,17 @@ def _submission_emails(lines: list[str]) -> list[str]:
     return [email for email in _unique(recipients) if email.casefold() not in prohibited]
 
 
-def _contact_emails(lines: list[str]) -> set[str]:
-    addresses = set()
+def _contact_emails(lines: list[str]) -> list[str]:
+    addresses = []
     for index, line in enumerate(lines):
         previous = lines[index - 1] if index else ""
         for clause in _SOURCE_CLAUSES.split(line):
             if _CONTACT.search(clause) and not (
                 _SUBMISSION_CHANNEL.search(clause) or _SUBMISSION_ADDRESS.search(clause)
             ):
-                addresses.update(email.casefold() for email in _EMAIL.findall(clause))
+                addresses.extend(_EMAIL.findall(clause))
         if _CONTACT.search(previous) and not _EMAIL.search(previous) and _EMAIL.fullmatch(line):
-            addresses.add(line.casefold())
+            addresses.append(line)
     return addresses
 
 
@@ -127,28 +127,35 @@ def mail_options(analysis: AnalysisResult, source: SourceDocument | None, title:
         field.evidence.matched_text or field.value for field in confirmed
         if field.key == FieldKey.SUBMISSION_METHOD
     ]
-    recipients, instruction_lines, explicit_contacts = [], [], set()
+    recipients, instruction_lines, explicit_contacts = [], [], []
     for page in pages:
         lines = [line.lstrip(" \t-–—○●■□▶▷·•※") for line in page.splitlines() if line.strip()]
         addresses = _submission_emails(lines)
         recipients.extend(addresses)
         instruction_lines.extend(line for line in lines if addresses or _EXPLICIT_MAIL_RULE.search(line))
-        if addresses:
-            explicit_contacts.update(_contact_emails(lines))
+        explicit_contacts.extend(_contact_emails(lines))
 
+    recipients = _unique(recipients)
     submission_addresses = {email.casefold() for email in recipients}
+    contact_addresses = {email.casefold() for email in explicit_contacts}
     inquiry = _unique(
         email for field in confirmed if field.key == FieldKey.CONTACT
         for email in _EMAIL.findall(field.value)
-        if email.casefold() not in submission_addresses or email.casefold() in explicit_contacts
+        if email.casefold() not in submission_addresses or email.casefold() in contact_addresses
         or field.status == "user_confirmed"
     )
+    if recipients and not inquiry:
+        inquiry = _unique(explicit_contacts)
+    inquiry_option = {"recipients": inquiry} if inquiry else None
+    if recipients and not inquiry_option:
+        inquiry_option = {"recipients": recipients, "usesSubmissionRecipient": True}
+
     body_instructions = _instructions(instruction_lines, _BODY)
     return {
         "title": title,
-        "inquiry": {"recipients": inquiry} if inquiry else None,
+        "inquiry": inquiry_option,
         "application": {
-            "recipients": _unique(recipients),
+            "recipients": recipients,
             "subjectFormats": _instructions(instruction_lines, _SUBJECT),
             "bodyInstructions": body_instructions,
             "requiredFields": _required_fields(body_instructions),

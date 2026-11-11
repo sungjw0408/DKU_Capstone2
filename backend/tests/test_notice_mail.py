@@ -131,6 +131,22 @@ def test_shared_line_does_not_offer_submission_address_for_inquiries(mail_client
     assert options["application"]["recipients"] == ["apply@example.edu"]
 
 
+def test_email_submission_also_allows_inquiry_without_separate_contact(mail_client):
+    client, calls = mail_client
+    doc_id = _analyze(client, "유니폼 디자인 공모\n이메일로 제출: apply@example.edu\n메일 제목: 공모전_성명")
+    _register(client, doc_id)
+
+    options = client.get(f"/api/documents/{doc_id}/mail-options").json()
+    assert options["inquiry"] == {"recipients": ["apply@example.edu"], "usesSubmissionRecipient": True}
+    assert options["application"]["recipients"] == ["apply@example.edu"]
+    request = {"kind": "inquiry", "recipient": "apply@example.edu", "question": "팀으로 응모해도 되나요?"}
+    response = client.post(f"/api/mail-drafts/{doc_id}", json=request)
+    assert response.status_code == 200, response.text
+    assert response.json()["recipient"] == "apply@example.edu"
+    assert request["question"] in response.json()["body"]
+    assert calls == [("inquiry", options["title"], request["question"])]
+
+
 def test_mail_rules_can_be_written_in_a_table(mail_client):
     client, _ = mail_client
     text = (
