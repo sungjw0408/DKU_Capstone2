@@ -88,7 +88,7 @@ const styles = StyleSheet.create({
   dayText: { ...type.body },
   today: { borderWidth: 1.5, borderColor: CALENDAR_ACCENT },
   todayText: { fontWeight: "700", color: CALENDAR_ACCENT },
-  selected: { backgroundColor: CALENDAR_ACCENT },
+  selected: { backgroundColor: colors.ink },
   selectedText: { color: colors.surface, fontWeight: "700" },
   pressed: { opacity: 0.65 },
   dots: { flexDirection: "row", gap: 3, height: 6, marginTop: 2 },

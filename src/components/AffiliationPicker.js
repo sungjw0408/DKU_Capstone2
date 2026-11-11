@@ -7,7 +7,7 @@ import PrimaryButton from "./PrimaryButton";
 import { colors, radius, spacing, type } from "../theme/theme";
 import { findAffiliation } from "../utils/authForm";
 
-const purple = "#2F5EDD";
+const purple = colors.stamp;
 
 export default function AffiliationPicker({ visible, catalog, value, onConfirm, onClose }) {
   const [collegeId, setCollegeId] = useState("");
@@ -68,7 +68,7 @@ export default function AffiliationPicker({ visible, catalog, value, onConfirm, 
 }
 
 const styles = StyleSheet.create({
-  overlay: { flex: 1, backgroundColor: "rgba(24, 30, 50, 0.35)", justifyContent: "center", alignItems: "center", padding: spacing.lg },
+  overlay: { flex: 1, backgroundColor: colors.overlay, justifyContent: "center", alignItems: "center", padding: spacing.lg },
   modal: { ...dialogGlass, width: "100%", maxWidth: 600, maxHeight: "90%", backgroundColor: dialogGlass.backgroundColor, borderRadius: 20, borderWidth: 1, borderColor: colors.line, padding: spacing.lg, gap: spacing.lg },
   header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   columns: { flexDirection: "row", gap: spacing.md, flexShrink: 1, minHeight: 160 },

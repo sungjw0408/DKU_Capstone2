@@ -6,7 +6,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { colors, spacing, radius, type } from "../theme/theme";
 import { parsePlanDate } from "../utils/preparationPlan";
 
-const accent = "#2F5EDD";
+const accent = colors.stamp;
 const pad = (value) => String(value).padStart(2, "0");
 
 export function CalendarDateField({ value, onChange, minDate, maxDate, allowClear = false }) {

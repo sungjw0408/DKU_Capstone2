@@ -20,8 +20,8 @@ import { needsEvidenceReview } from "../utils/evidenceReview";
 
 // ─────────────────────────── 화면 상수 ───────────────────────────
 const UI = {
-  soft: "#D7E4F6", // 요약 카드 · 페이지 번호 · 안내 띠 배경
-  viewerBg: "#C8D9EF", // 페이지 뷰어 바탕
+  soft: colors.subtle,
+  viewerBg: colors.hero,
   hl: "rgba(255, 194, 0, 0.68)", // 선택한 항목 형광펜
   hlDim: "rgba(255, 204, 38, 0.40)", // '전체' 탭에서 나머지 항목
   reviewHl: "rgba(244, 63, 76, 0.48)",
@@ -740,7 +740,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   tabOn: { backgroundColor: colors.stampSoft, borderColor: colors.stampSoft },
-  tabText: { fontSize: 14, fontWeight: "600", color: "#4A5568" },
+  tabText: { fontSize: 14, fontWeight: "600", color: colors.muted },
   tabTextOn: { color: colors.stamp, fontWeight: "700" },
 
   summary: { height: 170, backgroundColor: UI.soft, borderRadius: 14, borderWidth: 1, borderColor: "transparent", padding: spacing.lg, marginBottom: spacing.md },
@@ -782,14 +782,14 @@ const styles = StyleSheet.create({
   paper: {
     backgroundColor: "#fff",
     borderRadius: 2,
-    shadowColor: "#203D67",
+    shadowColor: colors.shadow,
     shadowOpacity: 0.1,
     shadowRadius: 6,
     shadowOffset: { width: 0, height: 2 },
     elevation: 2,
   },
   textPaper: {},
-  pageText: { color: "#2D3748" },
+  pageText: { color: colors.ink },
   pageHeading: { fontWeight: "700", color: colors.ink },
   arrow: {
     position: "absolute",

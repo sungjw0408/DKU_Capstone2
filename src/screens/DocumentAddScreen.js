@@ -930,11 +930,6 @@ const styles = StyleSheet.create({
     borderRadius: radius.lg,
     borderWidth: 1,
     borderColor: glass.borderColor,
-    shadowColor: "#203D67",
-    shadowOpacity: glass.shadowOpacity,
-    shadowRadius: glass.shadowRadius,
-    shadowOffset: glass.shadowOffset,
-    elevation: 1,
   },
 
   rowUnavailable: {
@@ -969,7 +964,7 @@ const styles = StyleSheet.create({
 
   rowDesc: {
     fontSize: 13,
-    color: "#465E7C",
+    color: colors.muted,
   },
 
   analyzingText: {
@@ -1000,11 +995,6 @@ const styles = StyleSheet.create({
     borderColor: glass.borderColor,
     padding: spacing.md,
     marginBottom: spacing.md,
-    shadowColor: glass.shadowColor,
-    shadowOpacity: glass.shadowOpacity,
-    shadowRadius: glass.shadowRadius,
-    shadowOffset: glass.shadowOffset,
-    elevation: 1,
   },
 
   inputCardFocused: {

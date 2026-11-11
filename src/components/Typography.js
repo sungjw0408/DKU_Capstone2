@@ -3,11 +3,11 @@ import { StyleSheet, Text as NativeText, TextInput as NativeTextInput } from "re
 
 const WeightContext = createContext("400");
 const families = {
-  400: "Pretendard-Regular",
-  500: "Pretendard-Medium",
-  600: "Pretendard-SemiBold",
-  700: "Pretendard-Bold",
-  800: "Pretendard-ExtraBold",
+  400: "WantedSans-Regular",
+  500: "WantedSans-Medium",
+  600: "WantedSans-SemiBold",
+  700: "WantedSans-Bold",
+  800: "WantedSans-ExtraBold",
 };
 
 function resolveTypography(style, inheritedWeight) {

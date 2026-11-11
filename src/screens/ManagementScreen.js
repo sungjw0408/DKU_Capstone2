@@ -368,9 +368,9 @@ export default function ManagementScreen({ navigation, route }) {
 
           {/* 다음 할 일 또는 모두 완료 */}
           {allDone ? (
-            <View style={[styles.banner, { backgroundColor: "#C9DAF3" }]}>
+            <View style={[styles.banner, { backgroundColor: colors.stampSoft }]}>
               <Text style={styles.bannerEmoji}>🎉</Text>
-              <Text style={[styles.bannerText, { color: "#0B6E99" }]}>
+              <Text style={[styles.bannerText, { color: colors.stamp }]}>
                 준비를 모두 마쳤어요! 마감 전에 제출만 확인하세요.
               </Text>
             </View>
@@ -633,7 +633,7 @@ const styles = StyleSheet.create({
   projectMenuButton: { width: 28, height: 28, alignItems: "center", justifyContent: "center" },
   ddayBadge: { paddingHorizontal: spacing.md, paddingVertical: spacing.sm, borderRadius: radius.md },
   ddayText: { fontSize: 18, fontWeight: "700", includeFontPadding: false },
-  deadlineText: { fontSize: 13, color: "#465E7C", marginTop: 4 },
+  deadlineText: { fontSize: 13, color: colors.muted, marginTop: 4 },
   affiliation: { marginTop: spacing.md },
   todoTitle: { fontSize: 15, lineHeight: 21, color: colors.ink },
   todoDate: { fontSize: 12, color: colors.muted, marginTop: 2 },

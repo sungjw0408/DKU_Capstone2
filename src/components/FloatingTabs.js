@@ -46,7 +46,7 @@ function TabButton({ route, selected, navigation, reducedMotion }) {
   };
 
   return <Pressable accessibilityRole="button" accessibilityLabel={label}
-    accessibilityState={add ? undefined : { selected }} onPress={onPress}
+    accessibilityState={add ? undefined : { selected }} aria-current={selected && !add ? "page" : undefined} onPress={onPress}
     onPressIn={() => animatePress(0.94)} onPressOut={() => animatePress(1)}
     onLongPress={() => navigation.emit({ type: "tabLongPress", target: route.key })}
     style={({ pressed }) => [styles.item, reducedMotion && pressed && { opacity: 0.7 }]}>
@@ -111,12 +111,14 @@ export default function FloatingTabs({ state, navigation }) {
 
 const styles = StyleSheet.create({
   dock: { position: "absolute", left: 0, right: 0, alignItems: "center", paddingHorizontal: 16 },
-  bar: { ...glass, width: "100%", maxWidth: 600, borderRadius: 32, padding: 7, flexDirection: "row", gap: 4 },
+  bar: { ...glass, width: "100%", maxWidth: 600, borderRadius: 32, padding: 7, flexDirection: "row", gap: 4,
+    backgroundColor: "#FAFAFB", shadowColor: colors.shadow, shadowOpacity: 0.1, shadowRadius: 18,
+    shadowOffset: { width: 0, height: 6 }, elevation: 4 },
   item: { flex: 1, minHeight: 55, borderRadius: 25, alignItems: "center", justifyContent: "center" },
   itemContent: { width: "100%", minHeight: 55, alignItems: "center", justifyContent: "center", gap: 4 },
   indicator: { position: "absolute", top: 7, bottom: 7, left: 0, borderRadius: 25,
-    backgroundColor: "rgba(165,196,239,0.62)", borderWidth: 1, borderColor: "rgba(242,248,255,0.7)" },
+    backgroundColor: colors.stampSoft },
   add: { width: 52, height: 52, borderRadius: 26, alignItems: "center", justifyContent: "center",
-    borderWidth: 1, borderColor: "#7799F1", shadowColor: colors.stamp, shadowOpacity: 0.24, shadowRadius: 8, shadowOffset: { width: 0, height: 3 } },
+    borderWidth: 1, borderColor: colors.stamp, shadowColor: colors.stamp, shadowOpacity: 0.18, shadowRadius: 8, shadowOffset: { width: 0, height: 3 } },
   label: { fontSize: 11, fontWeight: "600" },
 });

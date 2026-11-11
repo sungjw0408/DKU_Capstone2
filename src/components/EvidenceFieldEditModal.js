@@ -102,7 +102,7 @@ export default function EvidenceFieldEditModal({ fields, busy, onSave, onClose }
 }
 
 const styles = StyleSheet.create({
-  overlay: { flex: 1, justifyContent: "center", padding: spacing.lg, backgroundColor: "rgba(20,24,48,0.35)" },
+  overlay: { flex: 1, justifyContent: "center", padding: spacing.lg, backgroundColor: colors.overlay },
   dialog: { width: "100%", maxWidth: 480, maxHeight: "90%", alignSelf: "center", gap: spacing.md },
   scroll: { flexGrow: 0, flexShrink: 1 },
   fieldChoices: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
