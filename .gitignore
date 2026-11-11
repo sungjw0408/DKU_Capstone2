@@ -1,9 +1,11 @@
+
 node_modules/
 .expo/
 .DS_Store
 .idea/
 .env
 firebasekey/
+.vscode/
 android/
 ios/
 google-services.json

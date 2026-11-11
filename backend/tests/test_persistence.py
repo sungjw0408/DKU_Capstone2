@@ -53,6 +53,61 @@ def test_plan_is_restored_with_manual_fields_and_deadline_is_never_completed(sav
     assert client.get("/api/todos").json() == []
 
 
+def test_initial_plan_uses_recommendations_once_and_preserves_edits(saved_document, monkeypatch):
+    client, _, doc_id, steps = saved_document
+    calls = []
+
+    class Recommender(MockProvider):
+        def recommend_plan_dates(self, tasks, first, last, deadline):
+            calls.append((tasks, first, last, deadline))
+            return ["2070-09-22"] * len(tasks)
+
+    monkeypatch.setattr(routes, "get_llm", Recommender)
+    monkeypatch.setattr(routes, "_today", lambda: date(2070, 9, 20))
+    endpoint = f"/api/documents/{doc_id}/plan/initialize"
+    request = {"steps": steps, "revision": 0}
+
+    response = client.post(endpoint, json=request)
+    assert response.status_code == 200, response.text
+    plan = response.json()["plan"]
+    assert calls == [([step["label"] for step in steps[:-1]], date(2070, 9, 20), date(2070, 9, 25), date(2070, 9, 25))]
+    assert all(step["date"] == "2070-09-22" for step in plan["steps"][:-1])
+    assert (plan["steps"][-1]["date"], plan["steps"][-1]["time"]) == ("2070-09-25", "17:00")
+    assert client.get("/api/todos", params={"document_id": doc_id}).json() == []
+
+    plan["steps"][0]["date"] = "2070-09-23"
+    edited = put(client, doc_id, plan["steps"], plan["revision"]).json()["plan"]
+    assert client.post(endpoint, json=request).json()["plan"] == edited
+    assert len(calls) == 1
+    registered = put(client, doc_id, edited["steps"], edited["revision"], register=True)
+    assert registered.status_code == 200
+    todos = client.get("/api/todos", params={"document_id": doc_id}).json()
+    assert "2070-09-23" in {todo["date"] for todo in todos}
+
+
+@pytest.mark.parametrize("failure", ["out-of-range", "unavailable"])
+def test_initial_plan_falls_back_to_valid_dates_without_inventing_deadline(saved_document, monkeypatch, failure):
+    client, _, doc_id, steps = saved_document
+
+    class Recommender(MockProvider):
+        def recommend_plan_dates(self, tasks, first, last, deadline):
+            assert deadline is None
+            if failure == "unavailable":
+                raise errors.ServerError(503, {"error": {"message": "Unavailable"}})
+            return ["2070-09-19"] * len(tasks)
+
+    monkeypatch.setattr(routes, "get_llm", Recommender)
+    monkeypatch.setattr(routes, "_today", lambda: date(2070, 9, 20))
+    for step in steps:
+        step.update(date="", time="")
+    response = client.post(f"/api/documents/{doc_id}/plan/initialize", json={"steps": steps, "revision": 0})
+    assert response.status_code == 200, response.text
+    saved = response.json()["plan"]["steps"]
+    assert [step["date"] for step in saved[:2]] == ["2070-09-20", "2070-09-21"]
+    assert all(step["time"] == "" and step["durationMinutes"] is None for step in saved)
+    assert saved[-1]["isDeadline"] and saved[-1]["date"] == ""
+
+
 def test_stale_revision_does_not_overwrite_other_screen_changes(saved_document):
     client, _, doc_id, steps = saved_document
     first = put(client, doc_id, steps).json()["plan"]

@@ -2,9 +2,12 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from datetime import date
 from typing import Literal
 
+import httpx
+from google.genai import errors as genai_errors
 from pydantic import BaseModel, Field, model_validator
 
 
@@ -180,6 +183,44 @@ def default_todo_date(deadline: str | None, analysis: dict | None) -> str:
             except ValueError:
                 continue
     return ""
+
+
+def suggest_initial_dates(
+    plan: PlanSave,
+    analysis: dict,
+    today: date,
+    recommend: Callable[[list[str], date, date, date | None], list[str]],
+) -> PlanSave:
+    tasks = [step for step in plan.steps if not step.isDeadline and step.origin == "ai"]
+    deadline_text = next(step.date for step in plan.steps if step.isDeadline)
+    deadline = date.fromisoformat(deadline_text) if deadline_text else None
+    if not tasks or (deadline and deadline < today):
+        return plan
+
+    start_text = default_todo_date(None, analysis)
+    start = date.fromisoformat(start_text) if start_text else today
+    first = max(today, start) if not deadline or start <= deadline else today
+    last = deadline or date.fromordinal(min(first.toordinal() + 7, date.max.toordinal()))
+
+    try:
+        suggested = recommend([step.label for step in tasks], first, last, deadline) if first < last else []
+        parsed = [date.fromisoformat(day) for day in suggested]
+        valid = (
+            len(parsed) == len(tasks)
+            and all(first <= day <= last for day in parsed)
+            and parsed == sorted(parsed)
+            and suggested == [day.isoformat() for day in parsed]
+        )
+    except (ValueError, RuntimeError, httpx.TransportError, genai_errors.APIError):
+        valid = False
+
+    dates = suggested if valid else [
+        date.fromordinal(min(first.toordinal() + index, last.toordinal())).isoformat()
+        for index in range(len(tasks))
+    ]
+    by_id = {step.id: day for step, day in zip(tasks, dates, strict=True)}
+    steps = [step.model_copy(update={"date": by_id[step.id]}) if step.id in by_id else step for step in plan.steps]
+    return PlanSave(steps=steps, revision=plan.revision)
 
 
 def plan_todos(document_id: str, title: str, plan: dict) -> list[dict]:

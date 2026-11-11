@@ -313,6 +313,7 @@ class FirestoreStore:
             transaction.set(ref.collection("source").document("raw"), {
                 "source_kind": source.source_kind, "masked_count": source.masked_count,
                 "page_count": len(source.pages), "chunk_count": len(chunks),
+                "page_sources": [ item.model_dump() for item in source.page_sources ],
             })
             for index, chunk in enumerate(chunks):
                 transaction.set(ref.collection("sourceChunks").document(f"{index:06d}"), chunk)
@@ -342,6 +343,7 @@ class FirestoreStore:
             source_kind=data["source_kind"],
             pages=pages,
             masked_count=data.get("masked_count", 0),
+            page_sources=data.get("page_sources", []),
         )
 
     def get_record(self, doc_id):

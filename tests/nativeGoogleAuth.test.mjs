@@ -202,7 +202,8 @@ test("앱 설정은 기존 디자인·웹 설정을 유지하고 iOS 반환 URL�
   assert.deepEqual(config.android.adaptiveIcon, baseConfig.android.adaptiveIcon);
   assert.equal(config.ios.bundleIdentifier, "com.actiondoc.ttokdoc");
   assert.equal(config.android.package, "com.actiondoc.ttokdoc");
-  assert.equal(config.plugins.find((item) => Array.isArray(item))[1].iosUrlScheme, "com.googleusercontent.apps.example-ios");
+  const googlePlugin = config.plugins.find((item) => Array.isArray(item) && item[0] === "@react-native-google-signin/google-signin");
+  assert.equal(googlePlugin[1].iosUrlScheme, "com.googleusercontent.apps.example-ios");
   assert.deepEqual(configurationErrors(config, "ios"), []);
   assert.deepEqual(configurationErrors(config, "android"), []);
 });

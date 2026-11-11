@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from datetime import date
 
-from app.schemas import AnalysisResult, FieldKey, VerifiedField
+from app.schemas import AnalysisResult, FieldKey, VerifiedField, SourceDocument
 from app.utils.dates import parse_iso
 
 
@@ -66,7 +66,7 @@ def build_sections(a: AnalysisResult) -> list[dict]:
             + fmt_date(deadline.normalized_datetime, fallback=deadline.value, show_year=not same_year)
         )
         weaker = start if start.confidence <= deadline.confidence else deadline
-        period_items = [make_item(weaker, text)]
+        period_items = [ { **make_item(weaker, text), "relatedFieldIds": [start.id, deadline.id], }]
     elif deadline:
         period_title = "신청 마감"
         period_items = [date_item(deadline)]
@@ -109,13 +109,35 @@ def build_tags(a: AnalysisResult) -> list[str]:
     tags.append(f"{a.doc_category.value} 문서")
     return tags
 
-def to_analysis_detail(a: AnalysisResult) -> dict:
+def to_analysis_detail(a: AnalysisResult, source: SourceDocument | None = None,) -> dict:
     criteria = _usable(a.fields, FieldKey.APPLICANT_CRITERIA)
     exclusions = _usable(a.fields, FieldKey.APPLICANT_EXCLUSION)
     todos = _usable(a.fields, FieldKey.TODO)
     deadline = next(iter(_usable(a.fields, FieldKey.DEADLINE)), None)
     docs = _usable(a.fields, FieldKey.REQUIRED_DOCUMENT)
     method = next(iter(_usable(a.fields, FieldKey.SUBMISSION_METHOD)), None)
+
+    field_sources = {}
+
+    if source:
+        for field in a.fields:
+            page = field.evidence.page
+
+            if (
+                field.status == "unverified"
+                or field.evidence.match_score < 0.8
+                or page is None
+                or not 1 <= page <= len(source.page_sources)
+            ):
+                continue
+
+            origin = source.page_sources[page - 1]
+
+            field_sources[field.id] = {
+                "kind": origin.kind,
+                "filename": origin.filename,
+                "originalPage": origin.original_page,
+            }
 
     # 근거 화면: 핵심 필드의 원문 문장을 원문 순서대로 모은다
     key_fields = [*criteria, *exclusions, *([deadline] if deadline else []), *([method] if method else [])]
@@ -154,6 +176,7 @@ def to_analysis_detail(a: AnalysisResult) -> dict:
         "summary": build_summary(a),
         "tags": build_tags(a),
         "sections": build_sections(a),
+        "fieldSources": field_sources,
     }
 
 

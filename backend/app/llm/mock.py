@@ -6,6 +6,7 @@ Gemini와 같은 형식(LLMExtraction)을 돌려주는 것이 목적이다.
 from __future__ import annotations
 
 import re
+from datetime import date
 
 from app.schemas import DocCategory, FieldKey, LLMExtraction, LLMField, Sentence
 from app.utils.dates import find_ranges, parse_dates
@@ -46,6 +47,14 @@ def _f(key, label, value, quote, page, conf, iso=None) -> LLMField:
 
 class MockProvider:
     name = "mock"
+
+    def recommend_plan_dates(self, tasks: list[str], first: date, last: date, deadline: date | None) -> list[str]:
+        return []  # 모의 실행에서는 서버의 기본 날짜를 사용한다.
+
+    def draft_mail(self, kind: str, title: str, question: str) -> str:
+        if kind == "inquiry":
+            return f"안녕하세요. {title} 관련해 문의드립니다.\n\n{question}\n\n감사합니다."
+        return f"안녕하세요. {title}에 신청합니다."
 
     def transcribe(self, data: bytes, mime_type: str) -> list[str]:
         raise RuntimeError(

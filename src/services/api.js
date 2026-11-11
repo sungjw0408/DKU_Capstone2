@@ -1,8 +1,4 @@
-// src/services/api.js — ActionDoc 백엔드 호출
-// 프론트 루트 .env 에 EXPO_PUBLIC_API_URL=http://<PC 내부 IP>:8000
-//  - 실제 폰(Expo Go): PC의 내부 IP (localhost 불가)
-//  - Android 에뮬레이터: http://10.0.2.2:8000
-//  - 웹 / iOS 시뮬레이터: http://localhost:8000
+
 import { Platform } from "react-native";
 import { currentAuthUser } from "./auth";
 import { emitDataChanged } from "./dataEvents";
@@ -58,6 +54,65 @@ export function analyzeText(text) {
   return request("/api/documents/analyze", { method: "POST", body: form });
 }
 
+export function attachmentMimeType(filename) {
+  const name = (filename ?? "").toLowerCase();
+  const extension = name.includes(".") ? name.split(".").pop() : "";
+
+  return {
+    pdf: "application/pdf",
+    jpg: "image/jpeg",
+    jpeg: "image/jpeg",
+    png: "image/png",
+    webp: "image/webp",
+  }[extension] ?? null;
+}
+
+export async function analyzeWithAttachments(text, assets) {
+  if (!text.trim()) {
+    throw new Error("공지 본문을 입력해주세요.");
+  }
+
+  if (!Array.isArray(assets) || assets.length < 1 || assets.length > 3) {
+    throw new Error("첨부 파일은 1개 이상 3개 이하로 선택해주세요.");
+  }
+
+  const form = new FormData();
+  form.append("text", text);
+
+  for (const asset of assets) {
+    const name = asset.name ?? asset.fileName ?? asset.file?.name ?? "";
+    const type = attachmentMimeType(name);
+
+    if (!type) {
+      throw new Error(`지원하지 않는 첨부 파일 형식입니다: ${name}`);
+    }
+
+    if (Platform.OS === "web") {
+      const blob =
+        asset.file ?? (await (await fetch(asset.uri)).blob());
+
+      form.append("files", blob, name);
+    } else {
+      form.append("files", {
+        uri: asset.uri,
+        name,
+        type,
+      });
+    }
+  }
+
+  return request(
+    "/api/documents/analyze-with-attachments",
+    {
+      method: "POST",
+      body: form,
+    },
+    {
+      timeoutMs: 300000,
+    }
+  );
+}
+
 // expo-image-picker / expo-document-picker 의 asset 을 그대로 넘기면 된다.
 export async function analyzeFile(asset) {
   const isPdf = (asset.mimeType ?? asset.name ?? "").toLowerCase().includes("pdf");
@@ -76,8 +131,66 @@ export async function analyzeFile(asset) {
   return request("/api/documents/analyze", { method: "POST", body: form });
 }
 
+export async function analyzeImages(assets) {
+  if (!Array.isArray(assets) || assets.length < 2 || assets.length > 5) {
+    throw new Error("사진은 2장 이상 5장 이하로 선택해주세요.");
+  }
+
+  const form = new FormData();
+
+  for (let i = 0; i < assets.length; i++) {
+    const asset = assets[i];
+
+    const type = asset.mimeType ?? asset.file?.type ?? "image/jpeg";
+
+    const ext =
+      type === "image/png" ? "png" :
+      type === "image/webp" ? "webp" :
+      type === "image/heic" ? "heic" :
+      type === "image/heif" ? "heif" : "jpg";
+
+    const name =
+      asset.fileName ??
+      asset.name ??
+      asset.file?.name ??
+      `page-${i + 1}.${ext}`;
+
+    if (Platform.OS === "web") {
+      const blob =
+        asset.file ?? (await (await fetch(asset.uri)).blob());
+
+      form.append("files", blob, name);
+    } else {
+      form.append("files", {
+        uri: asset.uri,
+        name,
+        type,
+      });
+    }
+  }
+
+  return request(
+    "/api/documents/analyze-images",
+    {
+      method: "POST",
+      body: form,
+    },
+    {
+      timeoutMs: 300000,
+    }
+  );
+}
+
 export const listDocuments = () => request("/api/documents");
 export const getDocument = (id) => request(`/api/documents/${id}`);
+export const getNoticeMailOptions = (id, user) => request(
+  "/api/documents/" + encodeURIComponent(id) + "/mail-options", {}, { user },
+);
+export const createNoticeMailDraft = (id, input, user) => request(
+  "/api/mail-drafts/" + encodeURIComponent(id),
+  { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input) },
+  { user, timeoutMessage: "메일 초안 작성이 지연되고 있어요. 잠시 후 다시 시도해 주세요." },
+);
 export const updateDocument = (id, patch) =>
   request(
     `/api/documents/${encodeURIComponent(id)}`,
@@ -99,6 +212,9 @@ export const deleteDocument = (id) =>
   );
 export const getSource = (id) => request(`/api/documents/${id}/source`);
 export const retryDocument = (id) => request(`/api/documents/${encodeURIComponent(id)}/retry`, { method: "POST" });
+export const initializePlan = (id, steps) => request(`/api/documents/${encodeURIComponent(id)}/plan/initialize`, {
+  method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ steps, revision: 0 }),
+});
 export const savePlan = (id, steps, revision) => request(`/api/documents/${encodeURIComponent(id)}/plan`, {
   method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ steps, revision }),
 });

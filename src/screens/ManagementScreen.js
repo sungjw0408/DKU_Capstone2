@@ -18,6 +18,7 @@ import { ddayTone, DDAY_COLORS } from "../utils/dday";
 import TodoEditModal from "../components/TodoEditModal";
 import TodoOriginBadge from "../components/TodoOriginBadge";
 import DocumentEditModal from "../components/DocumentEditModal";
+import NoticeMailAction from "../components/NoticeMailAction";
 import { resetToHome } from "../navigation/routes";
 
 
@@ -55,7 +56,8 @@ export default function ManagementScreen({ navigation, route }) {
   const [showDocumentMenu, setShowDocumentMenu] = useState(false);
   const [editingDocument, setEditingDocument] = useState(null);
   const analysisDocumentId = documentId || doc?.id;
-  const affiliationFields = analysisDocument?.documentId === analysisDocumentId ? analysisDocument?.analysis?.fields : null;
+  const savedAnalysis = analysisDocument?.documentId === analysisDocumentId ? analysisDocument : null;
+  const affiliationFields = savedAnalysis?.analysis?.fields;
 
   useEffect(() => {
     if (loading || !notificationTodoId) return;
@@ -352,6 +354,9 @@ export default function ManagementScreen({ navigation, route }) {
           )}
           {affiliationFields?.length > 0 && (
             <NoticeAffiliation fields={affiliationFields} collegeOrDepartmentOnly style={styles.affiliation} />
+          )}
+          {savedAnalysis?.plan?.registered && (
+            <NoticeMailAction key={analysisDocumentId} documentId={analysisDocumentId} />
           )}
 
           <View style={{ marginVertical: spacing.md }}>

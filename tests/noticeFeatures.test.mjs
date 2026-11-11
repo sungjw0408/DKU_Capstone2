@@ -7,7 +7,7 @@ async function sourceModule(path) {
   return import("data:text/javascript;base64," + Buffer.from(source).toString("base64"));
 }
 const { compareNoticeAffiliation, createAffiliationMatcher } = await sourceModule("../src/utils/noticeEligibility.js");
-const { contactEmails, gmailComposeUrl, signedInWithGoogle } = await sourceModule("../src/utils/noticeMail.js");
+const { gmailComposeUrl, signedInWithGoogle } = await sourceModule("../src/utils/noticeMail.js");
 const { notificationRoute } = await sourceModule("../src/navigation/routes.js");
 
 const catalog = JSON.parse(await readFile(new URL("../backend/app/data/affiliations.json", import.meta.url), "utf8"));
@@ -52,16 +52,14 @@ test("등록 후 관리의 소속 판정은 신청 대상에 단과대나 학과
   assert.equal(forManagement([criterion("가상융합학과 재학생")]).status, "review");
 });
 
-test("확인된 문의처만 사용하고 Gmail 작성 주소에 수신자와 제목을 안전하게 채운다", () => {
-  const text = "문의 sw+help@example.edu, dept@example.edu";
-  assert.deepEqual(contactEmails({ text, status: "verified" }), ["sw+help@example.edu", "dept@example.edu"]);
-  assert.deepEqual(contactEmails({ text, status: "needs_review" }), []);
-  assert.deepEqual(contactEmails({ text: "잘못된 주소 sw..help@example.edu", status: "verified" }), []);
-  const url = new URL(gmailComposeUrl("sw+help@example.edu", "장학 & 연구\n수강 공지"));
+test("Gmail 작성 주소에 수정한 제목과 한글 본문을 안전하게 채운다", () => {
+  const body = "안녕하세요.\n서류 A & B를 문의드립니다.";
+  const url = new URL(gmailComposeUrl("sw+help@example.edu", "장학 & 연구\n수강 공지", body));
   assert.equal(url.origin, "https://mail.google.com");
   assert.equal(url.searchParams.get("view"), "cm");
   assert.equal(url.searchParams.get("to"), "sw+help@example.edu");
   assert.equal(url.searchParams.get("su"), "장학 & 연구 수강 공지");
+  assert.equal(url.searchParams.get("body"), body);
 });
 
 test("계정에 Google이 연결되어 있어도 비밀번호로 들어온 세션에서는 메일 기능을 숨긴다", async () => {
