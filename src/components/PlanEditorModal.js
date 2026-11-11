@@ -134,7 +134,7 @@ export default function PlanEditorModal({ mode, stepId, steps, defaultDate, onSa
 }
 
 const styles = StyleSheet.create({
-  overlay: { flex: 1, backgroundColor: "rgba(20, 24, 48, 0.35)", justifyContent: "center" },
+  overlay: { flex: 1, backgroundColor: colors.overlay, justifyContent: "center" },
   modalSafe: { flex: 1, justifyContent: "center", padding: spacing.lg },
   dialog: { width: "100%", maxWidth: 480, maxHeight: "100%", alignSelf: "center", padding: spacing.lg },
   header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: spacing.md },

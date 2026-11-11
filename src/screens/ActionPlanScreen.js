@@ -18,10 +18,9 @@ import { ddayTone, DDAY_COLORS } from "../utils/dday";
 import { daysUntil } from "../utils/todoManagement";
 import { backOrHome } from "../navigation/routes";
 
-// 첨부 화면의 색상은 이 화면에만 적용하고 앱 공통 디자인 토큰은 유지한다.
 const planColors = {
-    ink: "#101D32", accent: colors.stamp, soft: colors.stampSoft, border: "#B3C8E4",
-  green: "#28766B", alert: "#A34249", alertSoft: "#F4E4E5",
+  ink: colors.ink, accent: colors.stamp, soft: colors.stampSoft, border: colors.line,
+  green: colors.green, alert: colors.alert, alertSoft: colors.alertSoft,
 };
 
 export default function ActionPlanScreen({ navigation, route }) {
@@ -289,8 +288,8 @@ const styles = StyleSheet.create({
   editText: { fontSize: 12, fontWeight: "700", color: planColors.accent },
   pressed: { opacity: 0.65 },
   container: { ...pageContent, paddingHorizontal: spacing.xl, paddingBottom: 112 },
-  planCard: { padding: 0, borderColor: "#BACCE2", overflow: "hidden" },
-  summary: { padding: spacing.lg, borderBottomWidth: 1, borderBottomColor: "#BACCE2" },
+  planCard: { padding: 0, overflow: "hidden" },
+  summary: { padding: spacing.lg, borderBottomWidth: 1, borderBottomColor: colors.line },
   documentTitle: { ...type.h2, color: planColors.ink, marginBottom: spacing.md },
   deadlineRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
   deadlineInfo: { flex: 1, gap: spacing.xs },
@@ -303,24 +302,24 @@ const styles = StyleSheet.create({
   timeline: { paddingHorizontal: spacing.lg },
   stepRow: { flexDirection: "row", minHeight: 100 },
   markerColumn: { width: 26, alignItems: "center" },
-  connector: { position: "absolute", top: 0, bottom: 0, width: 2, backgroundColor: "#B2C7DF" },
+  connector: { position: "absolute", top: 0, bottom: 0, width: 2, backgroundColor: colors.line },
   lastConnector: { height: 45, bottom: undefined },
   marker: { marginTop: 29, width: 24, height: 24, alignItems: "center", justifyContent: "center", borderRadius: radius.pill },
   completedMarker: { backgroundColor: planColors.green },
   deadlineMarker: { backgroundColor: planColors.alert },
-  pendingMarker: { backgroundColor: colors.surface, borderWidth: 2, borderColor: "#6A86AC", borderRadius: radius.sm },
-  connectorDot: { position: "absolute", bottom: 0, width: 3, height: 4, borderRadius: radius.pill, backgroundColor: "#7B96BC" },
+  pendingMarker: { backgroundColor: colors.surface, borderWidth: 2, borderColor: colors.muted, borderRadius: radius.sm },
+  connectorDot: { position: "absolute", bottom: 0, width: 3, height: 4, borderRadius: radius.pill, backgroundColor: colors.muted },
   stepBody: { flex: 1, paddingLeft: spacing.lg, paddingTop: spacing.lg, paddingBottom: spacing.md, gap: spacing.xs },
   stepDate: { ...type.bodyStrong, color: planColors.ink, lineHeight: 21 },
   stepTitle: { ...type.bodyStrong, color: planColors.ink, lineHeight: 21, fontWeight: "700" },
   stepDetail: { ...type.small, lineHeight: 19, fontWeight: "500" },
-  deadlineDate: { color: "#A34249" },
-  deadlineTime: { color: "#A34249", fontWeight: "700", fontSize: 13 },
+  deadlineDate: { color: colors.alert },
+  deadlineTime: { color: colors.alert, fontWeight: "700", fontSize: 13 },
   addButton: { margin: spacing.lg, marginTop: spacing.sm, flexDirection: "row", justifyContent: "center", alignItems: "center", gap: spacing.xs, minHeight: 50, backgroundColor: planColors.soft, borderWidth: 1, borderColor: planColors.border, borderRadius: radius.md },
   addText: { ...type.bodyStrong, color: planColors.accent },
   registerButton: { backgroundColor: planColors.accent, minHeight: 52, justifyContent: "center", marginTop: spacing.lg },
   mockNote: { ...type.small, fontSize: 10, textAlign: "center", marginTop: spacing.sm, lineHeight: 16 },
-  previewOverlay: { flex: 1, justifyContent: "center", backgroundColor: "rgba(20, 24, 48, 0.35)", padding: spacing.xl },
+  previewOverlay: { flex: 1, justifyContent: "center", backgroundColor: colors.overlay, padding: spacing.xl },
   previewCard: { width: "100%", maxWidth: 480, maxHeight: "100%", alignSelf: "center" },
   previewTitle: { ...type.h1, color: planColors.ink },
   previewDescription: { ...type.body, color: colors.muted, marginVertical: spacing.md },

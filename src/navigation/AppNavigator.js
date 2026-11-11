@@ -27,7 +27,7 @@ const screenOptions = {
   headerBackground: () => <LinearGradient colors={gradients.header} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />,
   headerShadowVisible: false,
   headerTintColor: colors.ink,
-  headerTitleStyle: { fontFamily: "Pretendard-Bold", fontWeight: "normal" },
+  headerTitleStyle: { fontFamily: "WantedSans-Bold", fontWeight: "normal" },
   contentStyle: { backgroundColor: colors.paper },
 };
 

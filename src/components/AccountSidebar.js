@@ -126,7 +126,7 @@ export default function AccountSidebar({ visible, onClose, onNavigate }) {
 
 const styles = StyleSheet.create({
   overlay: { flex: 1, alignItems: "flex-end" },
-  shade: { backgroundColor: "rgba(24, 30, 50, 0.35)" },
+  shade: { backgroundColor: colors.overlay },
   panel: { ...dialogGlass, height: "100%", backgroundColor: dialogGlass.backgroundColor, borderLeftWidth: 1, borderLeftColor: colors.line },
   safe: { flex: 1 },
   header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", padding: spacing.lg, borderBottomWidth: 1, borderBottomColor: colors.line },

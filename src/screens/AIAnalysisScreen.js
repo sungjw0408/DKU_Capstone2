@@ -281,7 +281,7 @@ export default function AIAnalysisScreen({ navigation, route }) {
         {params.analysis && normalSections.length > 0 && (
           <View style={styles.noteLine}>
             <Ionicons name="shield-checkmark" size={14} color={colors.stamp} />
-            <Text style={[styles.noteText, { color: "#2F5EDD", fontWeight: "600" }]}>
+            <Text style={[styles.noteText, { color: colors.stamp, fontWeight: "600" }]}>
               {hasUserConfirmed ? "직접 확인한 문항에는 별도 표시가 있어요"
                 : hasIssues ? "표시가 없는 항목은 원문에서 확인했어요" : "모든 항목을 원문에서 확인했어요"}
             </Text>
@@ -333,12 +333,12 @@ const styles = StyleSheet.create({
     borderRadius: radius.pill,
   },
   doneText: { fontSize: 13, lineHeight: 17, fontWeight: "700", color: colors.green, includeFontPadding: false },
-  summaryText: { fontSize: 15, fontWeight: "500", color: "#465E7C" },
+  summaryText: { fontSize: 15, fontWeight: "500", color: colors.muted },
   docTitle: { fontSize: 18, fontWeight: "700", color: colors.ink, lineHeight: 25, letterSpacing: -0.3 },
   docCardOuter: {
     padding: 0,
     marginTop: spacing.sm,
-    shadowColor: "#203D67",
+    shadowColor: colors.shadow,
     shadowOpacity: 0.06,
     shadowRadius: 12,
     shadowOffset: { width: 0, height: 4 },

@@ -1,17 +1,19 @@
-import { Platform } from "react-native";
-
 export const colors = {
-  ink: "#112342", // 본문 텍스트, 헤더
-  paper: "#B9CBE0", // 청회색 배경
-  surface: "#DFE9F6", // 푸른 유리 표면
-  line: "#AFBFD4", // 구분선, 테두리
-  muted: "#465E7C", // 보조 텍스트
+  ink: "#202225",
+  paper: "#F3F3F4",
+  surface: "#FFFFFF",
+  hero: "#E8E9EB",
+  line: "#E2E3E6",
+  muted: "#5B6068",
+  subtle: "#EFF0F2",
+  overlay: "rgba(32,34,37,0.35)",
+  shadow: "#252930",
 
-  stamp: "#2F5EDD", // 마스코트의 코발트블루
-  stampSoft: "#C9DAF3",
+  stamp: "#2852CB",
+  stampSoft: "#EEF2FC",
 
-  alert: "#A34249", // 마감 임박 / 확인 필요
-  alertSoft: "#F4E4E5",
+  alert: "#A23442",
+  alertSoft: "#F8E9EA",
 
   gold: "#936A34", // 진행중
   goldSoft: "#F1EBDD",
@@ -40,28 +42,20 @@ export const type = {
 
 export const spacing = { xs: 4, sm: 8, md: 12, lg: 16, xl: 24, xxl: 32 };
 
-export const radius = { sm: 10, md: 16, lg: 24, pill: 999 };
+export const radius = { sm: 8, md: 12, lg: 16, pill: 999 };
 
 export const gradients = {
-  page: ["#B7C8DE", "#CCD9EA", "#9EB8D5"],
-  glass: ["rgba(234,243,255,0.82)", "rgba(198,216,239,0.72)"],
-  header: ["#D4E1F1", "#BBCEE6"],
-  hero: ["#365781", "#4B74A4", "#6893C2"],
-  action: ["#416FEF", "#2850C9"],
+  glass: ["#FFFFFF", "#FFFFFF"],
+  header: ["#E8E9EB", "#E8E9EB"],
+  action: ["#315DD8", "#2852CB"],
 };
 
 export const glass = {
-  backgroundColor: "rgba(214,229,248,0.76)",
-  borderWidth: 1, borderColor: "rgba(245,250,255,0.85)",
-  shadowColor: "#203D67", shadowOpacity: 0.17, shadowRadius: 18,
-  shadowOffset: { width: 0, height: 7 }, elevation: 4,
-  ...Platform.select({ web: {
-    backgroundImage: `linear-gradient(135deg, ${gradients.glass.join(", ")})`,
-    backdropFilter: "blur(18px)",
-  }, default: {} }),
+  backgroundColor: colors.surface,
+  borderWidth: 1, borderColor: colors.line,
 };
-export const dialogGlass = { ...glass, backgroundColor: "#DCE7F6" };
-export const inputSurface = "rgba(238,245,255,0.6)";
+export const dialogGlass = { ...glass, backgroundColor: colors.surface };
+export const inputSurface = "#F7F7F8";
 export const pageContent = {
-  width: "100%", maxWidth: 1120, alignSelf: "center", paddingBottom: 112,
+  width: "100%", maxWidth: 960, alignSelf: "center", paddingBottom: 112,
 };

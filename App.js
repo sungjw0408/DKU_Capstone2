@@ -8,11 +8,11 @@ import { AuthProvider } from "./src/contexts/AuthContext";
 
 export default function App() {
   const [fontsLoaded, fontError] = useFonts({
-    "Pretendard-Regular": require("./assets/fonts/Pretendard-Regular.ttf"),
-    "Pretendard-Medium": require("./assets/fonts/Pretendard-Medium.ttf"),
-    "Pretendard-SemiBold": require("./assets/fonts/Pretendard-SemiBold.ttf"),
-    "Pretendard-Bold": require("./assets/fonts/Pretendard-Bold.ttf"),
-    "Pretendard-ExtraBold": require("./assets/fonts/Pretendard-ExtraBold.ttf"),
+    "WantedSans-Regular": require("./assets/fonts/WantedSans-Regular.otf"),
+    "WantedSans-Medium": require("./assets/fonts/WantedSans-Medium.otf"),
+    "WantedSans-SemiBold": require("./assets/fonts/WantedSans-SemiBold.otf"),
+    "WantedSans-Bold": require("./assets/fonts/WantedSans-Bold.otf"),
+    "WantedSans-ExtraBold": require("./assets/fonts/WantedSans-ExtraBold.otf"),
   });
   if (fontError) throw fontError;
   if (!fontsLoaded) {
