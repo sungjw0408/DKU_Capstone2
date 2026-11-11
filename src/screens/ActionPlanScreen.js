@@ -12,7 +12,7 @@ import PlanEditorModal from "../components/PlanEditorModal";
 import TodoOriginBadge from "../components/TodoOriginBadge";
 import { colors, spacing, type, radius } from "../theme/theme";
 import { actionPlan } from "../data/mockData";
-import { getDocument, savePlan, registerPlan } from "../services/api";
+import { getDocument, initializePlan, savePlan, registerPlan } from "../services/api";
 import { createDocumentPlan, formatStepDate, formatDeadline, formatDuration, getDday, newTodoStepId, sortPlanSteps } from "../utils/preparationPlan";
 import { ddayTone, DDAY_COLORS } from "../utils/dday";
 import { daysUntil } from "../utils/todoManagement";
@@ -42,20 +42,9 @@ export default function ActionPlanScreen({ navigation, route }) {
       if (!id) return createDocumentPlan();
       const result = await getDocument(id);
       const base = createDocumentPlan(result);
-      let saved = result.plan;
-      if (!saved) {
-        try { saved = (await savePlan(id, base.steps, 0)).plan; }
-        catch (e) {
-          if (e.status !== 409) throw e;
-          saved = (await getDocument(id)).plan;
-          if (!saved) throw e;
-        }
-      }
-      const defaultDate = saved.steps.find((step) => step.isDeadline)?.date || base.startDate;
-      const steps = !saved.registered && defaultDate
-        ? saved.steps.map((step) => !step.isDeadline && !step.date ? { ...step, date: defaultDate } : step)
-        : saved.steps;
-      return { ...base, steps, revision: saved.revision, registered: saved.registered };
+      if (!base.hasAnalysis) return base;
+      const saved = result.plan ?? (await initializePlan(id, base.steps)).plan;
+      return { ...base, steps: saved.steps, revision: saved.revision, registered: saved.registered };
     };
     load().then((plan) => { if (active) setResource(plan); })
       .catch((e) => { if (active) setError(e.message); })
@@ -66,7 +55,7 @@ export default function ActionPlanScreen({ navigation, route }) {
   if (loading || error || !resource) return (
     <ScreenSurface style={styles.safe}>
       <View style={styles.container}>
-        <Text style={[type.body, { marginVertical: spacing.lg }]}>{error || "저장된 준비 계획을 불러오는 중…"}</Text>
+        <Text style={[type.body, { marginVertical: spacing.lg }]}>{error || "준비 계획을 불러오는 중…"}</Text>
         {!!error && <PrimaryButton label="다시 불러오기" onPress={() => setReload((prev) => prev + 1)} />}
         <Pressable accessibilityRole="button" accessibilityLabel="뒤로가기" style={styles.backButton}
           onPress={() => backOrHome(navigation)}>

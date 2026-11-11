@@ -212,6 +212,9 @@ export const deleteDocument = (id) =>
   );
 export const getSource = (id) => request(`/api/documents/${id}/source`);
 export const retryDocument = (id) => request(`/api/documents/${encodeURIComponent(id)}/retry`, { method: "POST" });
+export const initializePlan = (id, steps) => request(`/api/documents/${encodeURIComponent(id)}/plan/initialize`, {
+  method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ steps, revision: 0 }),
+});
 export const savePlan = (id, steps, revision) => request(`/api/documents/${encodeURIComponent(id)}/plan`, {
   method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ steps, revision }),
 });
