@@ -145,6 +145,9 @@ function NoticeMailModal({ documentId, options, user, onClose }) {
                     </View>
                   )}
 
+                  {kind === "inquiry" && options.inquiry.usesSubmissionRecipient && (
+                    <Text style={type.small}>별도 문의 이메일이 없어 공지의 접수 이메일을 사용해요.</Text>
+                  )}
                   {application && <Instructions label="공지의 메일 제목 형식" items={application.subjectFormats} />}
                   {draft ? (
                     <>

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date
 from typing import Protocol
 
 from app.schemas import LLMExtraction, Sentence
@@ -18,6 +19,10 @@ class LLMProvider(Protocol):
 
     def draft_mail(self, kind: str, title: str, question: str) -> str:
         """등록한 공지에 대한 문의 본문 또는 신청 메일 첫 문단을 작성한다."""
+        ...
+
+    def recommend_plan_dates(self, tasks: list[str], first: date, last: date, deadline: date | None) -> list[str]:
+        """새 준비 계획의 할 일별 추천 날짜를 입력 순서대로 반환한다."""
         ...
 
 

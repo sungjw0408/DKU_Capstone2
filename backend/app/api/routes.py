@@ -18,7 +18,9 @@ from app.schemas import AnalysisResult
 from app.services import originals, pipeline
 from app.services.frontend_view import to_analysis_detail
 from app.services.notice_mail import MailDraftRequest, mail_options, prepare_draft
-from app.services.preparation_plan import DocumentPatch, PlanSave, RevisionConflict, TodoCreate, TodoPatch, document_list_item
+from app.services.preparation_plan import (
+    DocumentPatch, PlanSave, RevisionConflict, TodoCreate, TodoPatch, document_list_item, suggest_initial_dates,
+)
 from app.services.store import get_store
 from app.utils.text import split_sentences
 
@@ -556,6 +558,28 @@ def _save_plan(doc_id, body, store, registered=False):
 @router.put("/documents/{doc_id}/plan")
 def save_plan(doc_id: str, body: PlanSave, store=Depends(user_store)):
     return _save_plan(doc_id, body, store)
+
+
+@router.post("/documents/{doc_id}/plan/initialize")
+def initialize_plan(doc_id: str, body: PlanSave, store=Depends(user_store)):
+    record = _record(doc_id, store)
+    if record.get("plan"):
+        return {"plan": record["plan"]}
+    if not record.get("analysis"):
+        raise HTTPException(409, "문서 분석이 완료된 뒤 준비 계획을 만들 수 있어요.")
+
+    initial = suggest_initial_dates(
+        body, record["analysis"], _today(),
+        lambda tasks, first, last, deadline: get_llm().recommend_plan_dates(tasks, first, last, deadline),
+    )
+    try:
+        return _save_plan(doc_id, initial, store)
+    except HTTPException as exc:
+        if exc.status_code == 409:
+            existing = _record(doc_id, store).get("plan")
+            if existing:
+                return {"plan": existing}
+        raise
 
 
 @router.post("/documents/{doc_id}/plan/register")
