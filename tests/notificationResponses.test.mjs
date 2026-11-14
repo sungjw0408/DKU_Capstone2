@@ -10,13 +10,17 @@ const user = { uid: "current" };
 
 globalThis.notificationTest = {
   currentAuthUser: () => user,
-  AsyncStorage: { getItem: async (key) => stored.get(key) ?? null },
+  AsyncStorage: {
+    getItem: async (key) => stored.get(key) ?? null,
+    setItem: async (key, value) => { stored.set(key, value); },
+  },
   AppState: { addEventListener: () => ({ remove() {} }) },
   Notifications: {
     DEFAULT_ACTION_IDENTIFIER: "default",
     setNotificationHandler() {},
     getAllScheduledNotificationsAsync: async () => [],
     getPresentedNotificationsAsync: async () => [],
+    addNotificationReceivedListener() { return { remove() {} }; },
     addNotificationResponseReceivedListener(listener) {
       receive = listener;
       return { remove() { receive = undefined; } };
@@ -34,18 +38,18 @@ const mocks = [
   "const onDataChanged = () => () => {};",
   "const REMINDER_OFFSETS = [3, 1, 0];",
 ].join("\n");
-const { startDeadlineNotifications, getReminderOffsets } = await import(
+const { startDeadlineNotifications, getReminderOffsets, getNotificationHistory } = await import(
   "data:text/javascript;base64," + Buffer.from(mocks + "\n" + source).toString("base64")
 );
 
 function response(identifier, data) {
   return {
     actionIdentifier: "default",
-    notification: { request: { identifier, content: { data: { source: "ttokdoc-deadline", ...data } } } },
+    notification: { date: Date.now(), request: { identifier, content: { data: { source: "ttokdoc-deadline", ...data } } } },
   };
 }
 
-test("종료 상태에서 받은 알림을 한 번만 열고 다른 계정의 알림은 건너뛴다", async () => {
+test("종료 상태에서 받은 마감 알림을 한 번만 열고 다른 계정·할 일 알림은 건너뛴다", async () => {
   const opened = [];
   const stop = startDeadlineNotifications(user.uid, (data) => opened.push(data));
   try {
@@ -55,7 +59,8 @@ test("종료 상태에서 받은 알림을 한 번만 열고 다른 계정의 �
     receive(cold);
     receive(response("previous-account", { ownerUid: "previous", kind: "deadline", documentId: "private" }));
     receive(response("group", { ownerUid: "current", kind: "todo" }));
-    assert.deepEqual(opened.map((data) => [data.kind, data.documentId]), [["deadline", "notice"], ["todo", undefined]]);
+    await getNotificationHistory();
+    assert.deepEqual(opened.map((data) => [data.kind, data.documentId]), [["deadline", "notice"]]);
     assert.equal(cleared, 3);
   } finally {
     stop();

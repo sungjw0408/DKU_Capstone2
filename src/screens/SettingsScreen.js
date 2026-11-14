@@ -1,7 +1,6 @@
 import { pageContent } from "../theme/theme";
 import { Text } from "../components/Typography";
 // 설정 탭: 계정 / 알림 / 앱 정보
-// - 계정: components/settings/AccountSection.js (팀원 B가 채울 칸)
 // - 알림: 마감 알림 켜기·끄기, 알림 시각 고르기
 // - 앱 정보: 버전, 앱 소개 다시 보기
 // - 맨 아래: 로그아웃, 회원 탈퇴
@@ -15,28 +14,29 @@ import Card from "../components/Card";
 import PrimaryButton from "../components/PrimaryButton";
 import AccountDeletionForm from "../components/AccountDeletionForm";
 import AccountSection from "../components/settings/AccountSection";
+import ReminderTimePicker from "../components/ReminderTimePicker";
 import { useAuth } from "../contexts/AuthContext";
 import { authErrorMessage } from "../utils/authForm";
 import { colors, radius, spacing, type } from "../theme/theme";
 import { backOrHome } from "../navigation/routes";
-import { REMINDER_HOUR, REMINDER_HOURS, REMINDER_OFFSETS, hourLabel, reminderOffsetLabel } from "../utils/notificationPlan";
+import { REMINDER_HOUR, REMINDER_OFFSETS, reminderTimeLabel, reminderOffsetLabel } from "../utils/notificationPlan";
 import { showOnboarding } from "../services/onboarding";
 import {
-  getReminderHour, getReminderOffsets, isNotificationEnabled, notificationsSupported, openSystemSettings,
-  permissionStatus, setNotificationEnabled, setReminderHour, setReminderOffsets,
+  getReminderTime, getReminderOffsets, isNotificationEnabled, notificationsSupported, openSystemSettings,
+  permissionStatus, setNotificationEnabled, setReminderTime, setReminderOffsets,
 } from "../services/notifications";
 
 const APP_VERSION = Constants.expoConfig?.version || "1.0.0";
 
-function noticeText(state, hour, offsets) {
+function noticeText(state, time, offsets) {
   switch (state) {
     case "unsupported": return "웹에서는 알림을 보낼 수 없어요. 휴대폰 앱에서 켜 주세요.";
     case "blocked": return "휴대폰 설정에서 똑독 알림이 꺼져 있어요.";
     case "off": return "알림을 받지 않아요.";
-    case "pending": return "알림을 허용하면 선택한 마감일과 할 일이 있는 날에 알려 드려요.";
+    case "pending": return "알림을 허용하면 선택한 마감일에 알려 드려요.";
     default: return offsets.length
-      ? `마감 ${offsets.map(reminderOffsetLabel).join("·")}과 할 일이 있는 날 ${hourLabel(hour)}에 알려 드려요.`
-      : `할 일이 있는 날 ${hourLabel(hour)}에만 알려 드려요.`;
+      ? `마감 ${offsets.map(reminderOffsetLabel).join("·")} ${reminderTimeLabel(time.hour, time.minute)}에 알려 드려요.`
+      : "마감 알림 시점을 선택해 주세요.";
   }
 }
 
@@ -47,15 +47,16 @@ export default function SettingsScreen({ navigation }) {
   const [deleting, setDeleting] = useState(false);
   const [confirmGuestLogout, setConfirmGuestLogout] = useState(false);
   const [notice, setNotice] = useState({ enabled: false, state: notificationsSupported ? "pending" : "unsupported" });
-  const [hour, setHour] = useState(REMINDER_HOUR);
+  const [time, setTime] = useState({ hour: REMINDER_HOUR, minute: 0 });
+  const [timePickerOpen, setTimePickerOpen] = useState(false);
   const [offsets, setOffsets] = useState(REMINDER_OFFSETS);
   const [noticeBusy, setNoticeBusy] = useState(false);
   const [noticeError, setNoticeError] = useState("");
 
   // 설정 탭에 올 때마다 알림 상태를 다시 확인 (휴대폰 설정에서 바꾸고 돌아와도 반영)
   const loadNotice = useCallback(async () => {
-    const [savedHour, savedOffsets] = await Promise.all([getReminderHour(), getReminderOffsets()]);
-    setHour(savedHour);
+    const [savedTime, savedOffsets] = await Promise.all([getReminderTime(), getReminderOffsets()]);
+    setTime(savedTime);
     setOffsets(savedOffsets);
     if (!notificationsSupported) return;
     const [enabled, permission] = await Promise.all([isNotificationEnabled(), permissionStatus()]);
@@ -72,11 +73,11 @@ export default function SettingsScreen({ navigation }) {
   }, [loadNotice]));
 
   const updateNotice = async (save) => {
-    if (noticeBusy) return;
+    if (noticeBusy) return false;
     setNoticeBusy(true);
     setNoticeError("");
-    try { await save(); await loadNotice(); }
-    catch { setNoticeError("알림 설정을 저장하지 못했어요. 다시 시도해 주세요."); }
+    try { await save(); await loadNotice(); return true; }
+    catch { setNoticeError("알림 설정을 저장하지 못했어요. 다시 시도해 주세요."); return false; }
     finally { setNoticeBusy(false); }
   };
   const toggleOffset = (offset) => updateNotice(() => setReminderOffsets(
@@ -90,7 +91,7 @@ export default function SettingsScreen({ navigation }) {
     catch (failure) { setError(authErrorMessage(failure)); }
   };
 
-  // 알림이 꺼져 있으면 시각 고르기는 흐리게 (웹은 알림함 미리보기용으로 고를 수 있게 둔다)
+  // 알림이 꺼져 있으면 시각 고르기는 흐리게 표시한다.
   const hourDisabled = notificationsSupported && !notice.enabled;
 
   return (
@@ -121,7 +122,7 @@ export default function SettingsScreen({ navigation }) {
                 <Ionicons name="notifications-outline" size={20} color={colors.ink} />
                 <View style={{ flex: 1 }}>
                   <Text style={type.bodyStrong}>마감 알림</Text>
-                  <Text style={type.small}>{noticeText(notice.state, hour, offsets)}</Text>
+                  <Text style={type.small}>{noticeText(notice.state, time, offsets)}</Text>
                 </View>
                 {notificationsSupported && ["on", "off"].includes(notice.state) && (
                   <Switch accessibilityLabel="마감 알림" value={notice.enabled} disabled={noticeBusy}
@@ -145,19 +146,11 @@ export default function SettingsScreen({ navigation }) {
                 <View style={styles.row}>
                   <Ionicons name="time-outline" size={20} color={colors.ink} />
                   <Text style={[type.bodyStrong, { flex: 1 }]}>알림 시각</Text>
-                  <Text style={[type.bodyStrong, { color: colors.stamp }]}>{hourLabel(hour)}</Text>
-                </View>
-                <View style={styles.chips}>
-                  {REMINDER_HOURS.map((h) => {
-                    const on = h === hour;
-                    return (
-                      <Pressable key={h} accessibilityRole="button" accessibilityState={{ selected: on, disabled: hourDisabled }}
-                        disabled={hourDisabled || noticeBusy} onPress={() => { if (h !== hour) updateNotice(() => setReminderHour(h)); }}
-                        style={[styles.chip, on && styles.chipOn]}>
-                        <Text style={[styles.chipText, on && styles.chipTextOn]}>{hourLabel(h)}</Text>
-                      </Pressable>
-                    );
-                  })}
+                  <Pressable accessibilityRole="button" accessibilityLabel={`알림 시각 변경, ${reminderTimeLabel(time.hour, time.minute)}`}
+                    disabled={hourDisabled || noticeBusy} onPress={() => { setNoticeError(""); setTimePickerOpen(true); }} style={styles.timeButton}>
+                    <Text style={[type.bodyStrong, { color: colors.stamp }]}>{reminderTimeLabel(time.hour, time.minute)}</Text>
+                    <Ionicons name="chevron-down" size={15} color={colors.stamp} />
+                  </Pressable>
                 </View>
               </View>
               <View style={[styles.hourBlock, hourDisabled && styles.dim]}>
@@ -224,6 +217,10 @@ export default function SettingsScreen({ navigation }) {
           </>
         )}
       </ScrollView>
+      {timePickerOpen && <ReminderTimePicker value={time} busy={noticeBusy} error={noticeError}
+        onClose={() => setTimePickerOpen(false)} onSave={async (next) => {
+          if (await updateNotice(() => setReminderTime(next))) setTimePickerOpen(false);
+        }} />}
     </ScreenSurface>
   );
 }
@@ -240,6 +237,7 @@ const styles = StyleSheet.create({
   row: { flexDirection: "row", alignItems: "center", gap: spacing.md },
   hourBlock: { marginTop: spacing.lg, paddingTop: spacing.lg, borderTopWidth: 1, borderTopColor: colors.line, gap: spacing.md },
   dim: { opacity: 0.45 },
+  timeButton: { minHeight: 44, flexDirection: "row", alignItems: "center", gap: spacing.xs, paddingLeft: spacing.sm },
   chips: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
   chip: {
     paddingHorizontal: spacing.md, height: 32, borderRadius: radius.pill, justifyContent: "center",

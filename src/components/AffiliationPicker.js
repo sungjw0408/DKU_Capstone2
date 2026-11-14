@@ -9,7 +9,7 @@ import { findAffiliation } from "../utils/authForm";
 
 const purple = colors.stamp;
 
-export default function AffiliationPicker({ visible, catalog, value, onConfirm, onClose }) {
+export default function AffiliationPicker({ visible, catalog, value, onConfirm, onClose, busy = false, error = "", confirmLabel = "선택 완료" }) {
   const [collegeId, setCollegeId] = useState("");
   const [departmentId, setDepartmentId] = useState("");
   useEffect(() => {
@@ -22,19 +22,19 @@ export default function AffiliationPicker({ visible, catalog, value, onConfirm, 
   const college = catalog?.colleges.find((item) => item.id === collegeId);
   const valid = findAffiliation(catalog, collegeId, departmentId);
   const row = (item, selected, onPress) => (
-    <Pressable key={item.id} accessibilityRole="radio" accessibilityState={{ checked: selected }} aria-checked={selected}
+    <Pressable key={item.id} accessibilityRole="radio" accessibilityState={{ checked: selected, disabled: busy }} aria-checked={selected} disabled={busy}
       accessibilityLabel={item.name} onPress={onPress} style={[styles.option, selected && styles.selected]}>
       <Text style={[type.bodyStrong, selected && styles.selectedText]}>{item.name}</Text>
       {!!item.aliases?.length && <Text style={[styles.alias, selected && styles.selectedText]}>{item.aliases.join(" · ")}</Text>}
     </Pressable>
   );
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={() => { if (!busy) onClose(); }}>
       <View style={styles.overlay}>
         <View accessibilityViewIsModal style={styles.modal}>
           <View style={styles.header}>
             <Text accessibilityRole="header" style={type.h1}>소속 선택</Text>
-            <Pressable accessibilityRole="button" accessibilityLabel="소속 선택 닫기" onPress={onClose} hitSlop={12}>
+            <Pressable accessibilityRole="button" accessibilityLabel="소속 선택 닫기" disabled={busy} onPress={onClose} hitSlop={12}>
               <Ionicons name="close" size={24} color={colors.ink} />
             </Pressable>
           </View>
@@ -57,9 +57,10 @@ export default function AffiliationPicker({ visible, catalog, value, onConfirm, 
             </View>
           </View>
           <Text style={styles.summary}>{valid ? `${valid.college.name} · ${valid.department.name}` : "단과대와 학과를 모두 선택해 주세요."}</Text>
+          {!!error && <Text accessibilityRole="alert" style={[type.small, { color: colors.alert }]}>{error}</Text>}
           <View style={styles.footer}>
-            <Pressable accessibilityRole="button" onPress={onClose} style={styles.cancel}><Text style={[type.bodyStrong, { color: colors.muted }]}>취소</Text></Pressable>
-            <PrimaryButton label="선택 완료" disabled={!valid} onPress={() => onConfirm({ collegeId, departmentId })} style={{ flex: 1 }} />
+            <Pressable accessibilityRole="button" disabled={busy} onPress={onClose} style={styles.cancel}><Text style={[type.bodyStrong, { color: colors.muted }]}>취소</Text></Pressable>
+            <PrimaryButton label={busy ? "저장 중…" : confirmLabel} disabled={!valid || busy} onPress={() => onConfirm({ collegeId, departmentId })} style={{ flex: 1 }} />
           </View>
         </View>
       </View>

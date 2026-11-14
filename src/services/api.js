@@ -203,13 +203,42 @@ export const updateDocument = (id, patch) =>
     }
   );
 
-export const deleteDocument = (id) =>
+export const deleteDocument = (id, user) =>
   request(
     `/api/documents/${encodeURIComponent(id)}`,
     {
       method: "DELETE",
-    }
+    },
+    { user }
   );
+
+// 여러 문서를 삭제할 때는 시작한 계정을 유지하고, 성공/실패한 ID를 따로 반환한다.
+export async function deleteDocuments(ids) {
+  const user = currentAuthUser();
+  const uniqueIds = [...new Set(ids)];
+  const deletedIds = [];
+  const failures = [];
+  for (let index = 0; index < uniqueIds.length; index++) {
+    if (!user || currentAuthUser()?.uid !== user.uid) {
+      failures.push(...uniqueIds.slice(index).map((id) => ({ id, message: "로그인한 계정이 변경됐어요. 현재 화면에서 다시 시도해 주세요." })));
+      break;
+    }
+    const id = uniqueIds[index];
+    try {
+      await deleteDocument(id, user);
+      deletedIds.push(id);
+    } catch (error) {
+      // 다른 화면/기기에서 이미 삭제한 문서는 목록에서도 제거한다.
+      if (error.status === 404) deletedIds.push(id);
+      else failures.push({ id, message: error.message || "문서를 삭제하지 못했어요." });
+      if (error.status === 401) {
+        failures.push(...uniqueIds.slice(index + 1).map((remainingId) => ({ id: remainingId, message: error.message })));
+        break;
+      }
+    }
+  }
+  return { deletedIds, failures };
+}
 export const getSource = (id) => request(`/api/documents/${id}/source`);
 export const retryDocument = (id) => request(`/api/documents/${encodeURIComponent(id)}/retry`, { method: "POST" });
 export const initializePlan = (id, steps) => request(`/api/documents/${encodeURIComponent(id)}/plan/initialize`, {

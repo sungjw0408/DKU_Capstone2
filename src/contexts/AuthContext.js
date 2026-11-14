@@ -1,5 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
-import { confirmAccountIdentity, createAccount, currentAuthUser, leaveAccount, linkGuestGoogleAccount, loginAccount, loginGoogleAccount, loginGuestAccount, observeAuth, usesGoogleAccount } from "../services/auth";
+import { changeAccountPassword, confirmAccountIdentity, createAccount, currentAuthUser, leaveAccount, linkGuestGoogleAccount, loginAccount, loginGoogleAccount, loginGuestAccount, observeAuth, reloadAccount, sendAccountPasswordReset, sendAccountVerification, usesGoogleAccount } from "../services/auth";
 import { deleteOwnAccount, ensureGuestProfile, getProfileState, saveProfile } from "../services/profileApi";
 import { registerWithProfile } from "../utils/accountFlow";
 import { authErrorMessage } from "../utils/authForm";
@@ -155,6 +155,16 @@ export function AuthProvider({ children }) {
     setSession({ ...initial, loading: false });
   });
 
+  const changePassword = (currentPassword, newPassword) => run(() => changeAccountPassword(currentAuthUser(), currentPassword, newPassword));
+  const sendPasswordReset = () => run(() => sendAccountPasswordReset(currentAuthUser()));
+  const sendVerification = () => run(() => sendAccountVerification(currentAuthUser()));
+  const refreshAccount = () => run(async () => {
+    const user = currentAuthUser();
+    await reloadAccount(user);
+    setSession((previous) => ({ ...previous, user }));
+    return user;
+  });
+
   const deleteAccount = (password) => run(async () => {
     const user = currentAuthUser();
     if (!user) throw new Error("다시 로그인해 주세요.");
@@ -171,7 +181,7 @@ export function AuthProvider({ children }) {
     setSession({ ...initial, loading: false });
   });
 
-  return <AuthContext.Provider value={{ ...session, busy, login, loginGoogle, loginGuest, upgradeGuestToGoogle, register, completeProfile, backToLogin, logout: backToLogin, deleteAccount,
+  return <AuthContext.Provider value={{ ...session, busy, login, loginGoogle, loginGuest, upgradeGuestToGoogle, register, completeProfile, changePassword, sendPasswordReset, sendVerification, refreshAccount, backToLogin, logout: backToLogin, deleteAccount,
     retryProfile: () => restore(currentAuthUser()) }}>{children}</AuthContext.Provider>;
 }
 

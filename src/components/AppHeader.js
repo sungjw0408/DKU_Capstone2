@@ -17,7 +17,7 @@ export default function AppHeader({ title, subtitle }) {
     </View>;
   }
 
-  return <View style={styles.header}>
+  return <View style={[styles.header, styles.brandHeader]}>
     <View style={styles.brandRow}>
       <Text style={styles.brand}>똑독</Text>
       {!!subtitle && <Text style={styles.brandSubtitle}>{subtitle}</Text>}
@@ -45,6 +45,7 @@ const styles = StyleSheet.create({
     minHeight: 68, paddingHorizontal: spacing.lg, paddingVertical: spacing.sm,
   },
   pageHeader: { marginBottom: spacing.lg, borderBottomWidth: 1, borderBottomColor: colors.line },
+  brandHeader: { borderBottomWidth: 1, borderBottomColor: "#CDD0D5" },
   heading: { flex: 1, gap: 2 },
   title: { ...type.display, fontSize: 22, lineHeight: 26 },
   subtitle: { ...type.small, lineHeight: 16 },

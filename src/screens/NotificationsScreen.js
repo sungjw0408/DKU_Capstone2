@@ -1,6 +1,6 @@
 import { pageContent } from "../theme/theme";
 import { Text } from "../components/Typography";
-// 알림함 (홈 오른쪽 위 🔔): 앞으로 보낼 마감·할 일 알림을 날짜별로 보여 준다.
+// 알림함 (홈 오른쪽 위 🔔): 실제로 받은 마감 알림을 최신순으로 보여 준다.
 // 누르면 그 문서의 관리 화면으로 간다. 알림이 꺼져 있으면 설정으로 안내한다.
 import React, { useCallback, useState } from "react";
 import { useFocusEffect } from "@react-navigation/native";
@@ -9,8 +9,7 @@ import ScreenSurface from "../components/ScreenSurface";
 import { Ionicons } from "@expo/vector-icons";
 import Card from "../components/Card";
 import { colors, spacing, type } from "../theme/theme";
-import { getUpcomingReminders, isNotificationEnabled, notificationsSupported, permissionStatus } from "../services/notifications";
-import { onDataChanged } from "../services/dataEvents";
+import { getNotificationHistory, onNotificationHistoryChanged, isNotificationEnabled, notificationsSupported, permissionStatus } from "../services/notifications";
 import { notificationRoute } from "../navigation/routes";
 
 const pad = (n) => String(n).padStart(2, "0");
@@ -20,7 +19,7 @@ function dayLabel(date) {
   const diff = Math.round((new Date(date.getFullYear(), date.getMonth(), date.getDate())
     - new Date(today.getFullYear(), today.getMonth(), today.getDate())) / 86400000);
   const base = `${date.getMonth() + 1}월 ${date.getDate()}일 (${"일월화수목금토"[date.getDay()]})`;
-  return diff === 0 ? `오늘 · ${base}` : diff === 1 ? `내일 · ${base}` : base;
+  return diff === 0 ? `오늘 · ${base}` : diff === -1 ? `어제 · ${base}` : `${date.getFullYear()}년 ${base}`;
 }
 const timeLabel = (d) => `${d.getHours() < 12 ? "오전" : "오후"} ${d.getHours() % 12 || 12}:${pad(d.getMinutes())}`;
 
@@ -31,7 +30,7 @@ export default function NotificationsScreen({ navigation }) {
   const [status, setStatus] = useState("on"); // on | off | unsupported
   const [reload, setReload] = useState(0);
 
-  useFocusEffect(useCallback(() => onDataChanged(() => setReload((value) => value + 1)), []));
+  useFocusEffect(useCallback(() => onNotificationHistoryChanged(() => setReload((value) => value + 1)), []));
 
   useFocusEffect(useCallback(() => {
     let active = true;
@@ -40,7 +39,7 @@ export default function NotificationsScreen({ navigation }) {
     (async () => {
       try {
         const [list, enabled, permission] = await Promise.all([
-          getUpcomingReminders(),
+          getNotificationHistory(),
           isNotificationEnabled(),
           notificationsSupported ? permissionStatus() : "unsupported",
         ]);
@@ -80,7 +79,7 @@ export default function NotificationsScreen({ navigation }) {
                 {status === "unsupported" ? "웹에서는 알림이 오지 않아요" : "알림이 꺼져 있어요"}
               </Text>
               <Text style={type.small}>
-                {status === "unsupported" ? "휴대폰 앱에서 아래 일정에 맞춰 알림을 받을 수 있어요." : "설정에서 켜면 아래 일정에 맞춰 알려 드려요."}
+                {status === "unsupported" ? "받은 알림 내역은 알림을 수신한 휴대폰 앱에 저장돼요." : "이전에 받은 알림은 계속 볼 수 있어요. 새 마감 알림을 받으려면 설정에서 켜 주세요."}
               </Text>
             </View>
             {status === "off" && (
@@ -98,8 +97,8 @@ export default function NotificationsScreen({ navigation }) {
         ) : items.length === 0 ? (
           <Card style={styles.empty}>
             <Ionicons name="notifications-outline" size={32} color={colors.muted} />
-            <Text style={type.bodyStrong}>예정된 알림이 없어요</Text>
-            <Text style={[type.small, { textAlign: "center" }]}>문서의 준비 계획을 등록하면{"\n"}마감 전에 알림이 예약돼요.</Text>
+            <Text style={type.bodyStrong}>받은 알림이 없어요</Text>
+            <Text style={[type.small, { textAlign: "center" }]}>마감 알림이 도착하면{"\n"}여기에 차곡차곡 모아 드려요.</Text>
           </Card>
         ) : (
           groups.map((group) => (
@@ -109,8 +108,7 @@ export default function NotificationsScreen({ navigation }) {
                 {group.list.map((item, idx) => (
                   <Pressable key={item.id} accessibilityRole="button" onPress={() => open(item)}
                     style={({ pressed }) => [styles.row, idx > 0 && styles.divider, pressed && styles.pressed]}>
-                    <Ionicons name={item.data?.kind === "deadline" ? "alarm-outline" : "checkbox-outline"} size={20}
-                      color={item.data?.kind === "deadline" ? colors.alert : colors.stamp} />
+                    <Ionicons name="alarm-outline" size={20} color={colors.alert} />
                     <View style={{ flex: 1 }}>
                       <Text style={type.bodyStrong} numberOfLines={2}>{item.title}</Text>
                       <Text style={styles.body} numberOfLines={3}>{item.body}</Text>
