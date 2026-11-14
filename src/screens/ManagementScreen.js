@@ -4,7 +4,7 @@ import { Text } from "../components/Typography";
 // src/screens/ManagementScreen.js
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useFocusEffect } from "@react-navigation/native";
-import { View, ScrollView, Pressable, StyleSheet, ActivityIndicator, Alert, Platform, Linking, Modal } from "react-native";
+import { View, ScrollView, Pressable, StyleSheet, ActivityIndicator, Alert, Platform, Linking, Modal, Image } from "react-native";
 import ScreenSurface from "../components/ScreenSurface";
 import { Ionicons } from "@expo/vector-icons";
 import Card from "../components/Card";
@@ -36,7 +36,7 @@ function todoCalendarUrl(item) {
     date: item.date,
     time: item.time,
     durationMinutes: item.duration_minutes,
-    details: `${item.doc_title} 준비 일정 (ActionDoc)`,
+    details: `${item.doc_title} 준비 일정 (똑독)`,
   });
 }
 
@@ -284,7 +284,7 @@ export default function ManagementScreen({ navigation, route }) {
     date: deadline.date,
     time: deadline.time,
     durationMinutes: 30,
-    details: "ActionDoc에서 등록한 신청 마감 일정",
+    details: "똑독에서 등록한 신청 마감 일정",
   });
 
   if (loading) {
@@ -475,7 +475,7 @@ export default function ManagementScreen({ navigation, route }) {
               accessibilityRole="button"
               onPress={() => openUrl(deadlineUrl)}
             >
-              <Ionicons name="logo-google" size={16} color={colors.stamp} />
+              <Image source={require("../../assets/google-g.png")} style={styles.googleLogo} resizeMode="contain" accessible={false} />
               <Text style={styles.calendarButtonText}>마감일을 Google 캘린더에 추가</Text>
             </Pressable>
           ) : null}
@@ -655,15 +655,18 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: 6,
+    gap: 8,
     marginTop: spacing.md,
+    minHeight: 48,
+    paddingHorizontal: 12,
     paddingVertical: 12,
     borderRadius: radius.md,
-    borderWidth: 1.5,
-    borderColor: colors.stamp,
+    borderWidth: 1,
+    borderColor: "#DADCE0",
     backgroundColor: colors.surface,
   },
-  calendarButtonText: { color: colors.stamp, fontSize: 14, fontWeight: "700" },
+  googleLogo: { width: 20, height: 20 },
+  calendarButtonText: { color: "#3C4043", fontSize: 14, fontWeight: "600", flexShrink: 1 },
   tip: { flexDirection: "row", gap: 5, alignItems: "flex-start", paddingHorizontal: 2, marginBottom: spacing.lg },
   tipText: { flex: 1, fontSize: 12, lineHeight: 17, color: colors.muted },
   menuBackdrop: { flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0, 0, 0, 0.25)", padding: spacing.lg },

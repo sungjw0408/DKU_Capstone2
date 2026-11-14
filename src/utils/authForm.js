@@ -28,6 +28,7 @@ export function authErrorMessage(error) {
     "auth/guest-google-account-in-use": "이미 가입된 Google 계정이에요. 게스트 데이터는 그대로 유지돼요. 다른 Google 계정을 선택해 주세요.",
     "auth/user-mismatch": "현재 로그인한 Google 계정을 선택해 주세요.",
     "auth/requires-recent-login": "본인 확인 시간이 지났어요. 다시 확인해 주세요.",
+    "auth/session-changed": "로그인 상태가 변경됐어요. 다시 로그인해 주세요.",
     "auth/invalid-oauth-client-id": "Google 로그인 설정을 확인해 주세요.",
     "auth/google-configuration-missing": "Google 로그인 설정을 확인하지 못했어요. 이메일 또는 게스트로 시작해 주세요.",
     "auth/google-native-unavailable": "현재 앱에서 Google 로그인을 사용할 수 없어요. 이메일 또는 게스트로 시작해 주세요.",
@@ -40,6 +41,15 @@ export function authErrorMessage(error) {
   return messages[error?.code] || (error?.code?.startsWith("auth/")
     ? "로그인 처리에 실패했어요. 잠시 후 다시 시도해 주세요."
     : error?.message || "요청을 처리하지 못했어요. 다시 시도해 주세요.");
+}
+
+export function validatePasswordChange({ currentPassword, newPassword, confirmation }) {
+  if (!currentPassword) return "현재 비밀번호를 입력해 주세요.";
+  if (!newPassword) return "새 비밀번호를 입력해 주세요.";
+  if (newPassword.length < 6) return "새 비밀번호는 6자 이상 입력해 주세요.";
+  if (newPassword === currentPassword) return "현재 비밀번호와 다른 새 비밀번호를 입력해 주세요.";
+  if (newPassword !== confirmation) return "새 비밀번호가 일치하지 않아요.";
+  return "";
 }
 
 export function findAffiliation(catalog, collegeId, departmentId) {

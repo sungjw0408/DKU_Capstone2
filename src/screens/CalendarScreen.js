@@ -9,7 +9,7 @@ import ScreenSurface from "../components/ScreenSurface";
 import { Ionicons } from "@expo/vector-icons";
 import Card from "../components/Card";
 import Badge from "../components/Badge";
-import MonthCalendar, { CALENDAR_ACCENT } from "../components/MonthCalendar";
+import MonthCalendar, { CALENDAR_ACCENT, CALENDAR_EVENT_COLORS } from "../components/MonthCalendar";
 import { colors, spacing, type } from "../theme/theme";
 import { listDocuments, listTodos, getDocument } from "../services/api";
 import { onDataChanged } from "../services/dataEvents";
@@ -114,6 +114,7 @@ export default function CalendarScreen({ navigation }) {
           onSelect={selectDate}
           today={todayKey}
           events={events}
+          showEventCounts
         />
 
         <Text style={styles.dayTitle}>{dateLabel(selected)}{selected === todayKey ? " · 오늘" : ""}</Text>
@@ -132,7 +133,7 @@ export default function CalendarScreen({ navigation }) {
                     <Pressable key={doc.id} accessibilityRole="button" accessibilityLabel={`${doc.title} 문서 열기`}
                       disabled={!!openingId} onPress={() => openDocument(doc.id)}
                       style={({ pressed }) => [styles.item, idx > 0 && styles.divider, pressed && styles.pressed]}>
-                      <View style={[styles.bar, { backgroundColor: colors.alert }]} />
+                      <View style={[styles.bar, { backgroundColor: CALENDAR_EVENT_COLORS.deadline }]} />
                       <View style={{ flex: 1 }}>
                         <Text style={type.bodyStrong} numberOfLines={2}>{doc.title}</Text>
                         <Text style={styles.sub}>{doc.time ? `${doc.time} 마감` : "마감일"}{doc.dday > 0 ? " · 마감 지남" : ""}</Text>
@@ -155,7 +156,7 @@ export default function CalendarScreen({ navigation }) {
                       disabled={!!openingId || !todo.document_id} onPress={() => openDocument(todo.document_id)}
                       style={({ pressed }) => [styles.item, idx > 0 && styles.divider, pressed && styles.pressed]}>
                       <Ionicons name={todo.is_completed ? "checkbox" : "square-outline"} size={20}
-                        color={todo.is_completed ? CALENDAR_ACCENT : colors.muted} />
+                        color={todo.is_completed ? CALENDAR_EVENT_COLORS.todo : colors.muted} />
                       <View style={{ flex: 1 }}>
                         <Text style={[type.bodyStrong, todo.is_completed && styles.done]} numberOfLines={2}>{todo.title}</Text>
                         <Text style={styles.sub} numberOfLines={1}>{todo.time ? `${todo.time} · ` : ""}{todo.doc_title}</Text>

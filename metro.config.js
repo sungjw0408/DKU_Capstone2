@@ -5,6 +5,10 @@ const { getDefaultConfig } = require("expo/metro-config");
 const config = getDefaultConfig(__dirname);
 
 const backendDir = path.resolve(__dirname, "backend").replace(/[/\\]/g, "[/\\\\]");
-config.resolver.blockList = [new RegExp(`^${backendDir}[/\\\\].*`)];
+config.resolver.blockList = [
+  new RegExp(`^${backendDir}[/\\\\].*`),
+  // Ignore numbered dependency copies created by file sync; reading them can stall Metro.
+  /[/\\]node_modules[/\\].* [2-9][0-9]*\.[^/\\]+$/,
+];
 
 module.exports = config;

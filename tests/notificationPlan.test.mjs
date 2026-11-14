@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 const source = await readFile(new URL("../src/utils/notificationPlan.js", import.meta.url), "utf8");
-const { buildNotificationPlan, planSignature, MAX_SCHEDULED, hourLabel } =
+const { buildNotificationPlan, planSignature, MAX_SCHEDULED, hourLabel, reminderTimeLabel } =
   await import(`data:text/javascript;base64,${Buffer.from(source).toString("base64")}`);
 
 const now = new Date(2026, 9, 23, 10, 0); // 2026-10-23 오전 10시
@@ -38,7 +38,7 @@ test("이미 지난 시각은 건너뛴다 (내일 마감이면 D-1과 당일만
   assert.deepEqual(plan.map((i) => i.id), ["doc:b:d0"]);
 });
 
-test("할 일은 그날 아침 9시, 같은 날은 하나로 묶는다", () => {
+test("할 일은 알림 예약에서 제외한다", () => {
   const docs = [{ id: "a", title: "장학금", registered: true, progress: 0.2, deadline: "" }];
   const plan = buildNotificationPlan(docs, [
     { id: "t1", title: "추천서 받기", date: "2026-10-27", time: "14:00", document_id: "a", doc_title: "장학금" },
@@ -48,12 +48,7 @@ test("할 일은 그날 아침 9시, 같은 날은 하나로 묶는다", () => {
     { id: "t5", title: "날짜 없음", date: null, document_id: "a" },
     { id: "t6", title: "지운 문서의 할 일", date: "2026-10-30", document_id: "deleted" },
   ], now);
-  assert.deepEqual(plan.map((i) => i.id), ["todo:2026-10-27", "todo:2026-10-28"]);
-  assert.equal(plan[0].title, "오늘 할 일: 추천서 받기");
-  assert.equal(plan[0].body, "장학금 · 14:00");
-  assert.equal(plan[1].title, "오늘 할 일 2개");
-  assert.equal(plan[1].body, "· 신청서 작성\n· 재학증명서 발급");
-  assert.equal(plan[1].date.getTime(), at("2026-10-28"));
+  assert.deepEqual(plan, []);
 });
 
 test("예약은 가까운 순으로 최대 60개", () => {
@@ -85,18 +80,38 @@ test("설정에서 고른 알림 시각으로 예약한다", () => {
   assert.deepEqual(today.map((i) => i.id), ["doc:c:d0"]);
 });
 
-test("선택한 마감 알림만 예약하고, 마감 알림을 모두 해제해도 할 일 알림은 남는다", () => {
+test("선택한 마감 알림만 예약하고, 모두 해제하면 예약하지 않는다", () => {
   const docs = [{ id: "a", title: "공지", registered: true, deadline: "2026-11-25" }];
   const todos = [{ id: "t1", title: "준비", document_id: "a", date: "2026-11-20" }];
   const selected = buildNotificationPlan(docs, todos, now, { hour: 18, offsets: [0, 3] });
-  assert.deepEqual(selected.map((item) => item.id), ["todo:2026-11-20", "doc:a:d3", "doc:a:d0"]);
-  assert.equal(selected[0].data.todoId, "t1");
+  assert.deepEqual(selected.map((item) => item.id), ["doc:a:d3", "doc:a:d0"]);
   assert.ok(selected.every((item) => item.date.getHours() === 18));
-  assert.deepEqual(buildNotificationPlan(docs, todos, now, { offsets: [] }).map((item) => item.id), ["todo:2026-11-20"]);
+  assert.deepEqual(buildNotificationPlan(docs, todos, now, { offsets: [] }), []);
 });
 
 test("알림 시각 표시", () => {
   assert.equal(hourLabel(9), "오전 9시");
   assert.equal(hourLabel(12), "낮 12시");
   assert.equal(hourLabel(18), "오후 6시");
+});
+
+test("분 단위 선택을 마감 알림에 반영한다", () => {
+  const docs = [{ id: "a", title: "공지", registered: true, deadline: "2026-11-25" }];
+  const todos = [{ id: "t", title: "준비", date: "2026-11-20", document_id: "a" }];
+  const plan = buildNotificationPlan(docs, todos, now, { hour: 18, minute: 37 });
+  assert.equal(plan.length, 3);
+  assert.ok(plan.every((item) => item.date.getHours() === 18 && item.date.getMinutes() === 37));
+  assert.notEqual(planSignature(plan), planSignature(buildNotificationPlan(docs, todos, now, { hour: 18, minute: 38 })));
+  assert.equal(reminderTimeLabel(0, 5), "오전 12:05");
+  assert.equal(reminderTimeLabel(12, 0), "오후 12:00");
+  assert.equal(reminderTimeLabel(23, 59), "오후 11:59");
+});
+
+test("선택한 분까지 비교해 지난 알림을 제외하고 자정 선택도 당일로 예약한다", () => {
+  const docs = [{ id: "a", title: "공지", registered: true, deadline: "2026-10-23" }];
+  const current = new Date(2026, 9, 23, 10, 15);
+  assert.equal(buildNotificationPlan(docs, [], current, { hour: 10, minute: 14 }).length, 0);
+  assert.equal(buildNotificationPlan(docs, [], current, { hour: 10, minute: 16 }).length, 1);
+  const midnight = buildNotificationPlan([{ ...docs[0], deadline: "2026-10-24" }], [], current, { hour: 0, minute: 0 });
+  assert.equal(midnight[0].date.getTime(), new Date(2026, 9, 24, 0, 0).getTime());
 });
