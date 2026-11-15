@@ -23,6 +23,7 @@
 
 ## 🎥 Demo
 
+👉 [똑독 웹 서비스 바로가기](https://ttokdoc.onrender.com/)
 👉 [똑독 시연 영상 보기](https://youtu.be/5QPw21AZITA)
 
 ---
