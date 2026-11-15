@@ -16,7 +16,7 @@
 - [주요 기능](#-주요-기능)
 - [서비스 흐름](#-서비스-흐름)
 - [Tech Stack](#-tech-stack)
-- [Project Deliverables](#-project-deliverables)
+- [Project Deliverables](#deliverables)
 - [개발 문서](#-개발-문서)
 
 ---
@@ -80,19 +80,22 @@ Gemini가 문서의 주요 정보를 추출하면 백엔드가 원문 근거와 
 
 ---
 
+<a id="deliverables"></a>
+
 ## 📁 Project Deliverables
 
 | 구분 | 자료 |
 | --- | --- |
 | 시연 영상 | [유튜브 시연 영상](https://youtu.be/5QPw21AZITA) |
-| 포스터 PDF | [포스터 보기](submission/poster.pdf) |
-| 포스터 이미지 | [이미지 보기](submission/poster.png) |
-| 프로젝트 결과보고서 | [결과보고서 보기](submission/final-report.pdf) |
-| 소스 코드 | 본 저장소 |
+| 포스터 PDF | [똑독 포스터](./똑독_포스터.pdf) |
+| 프로젝트 결과보고서 | [똑독 결과보고서](./똑독_결과보고서.pdf) |
+| 소스 코드 | [develop 브랜치 바로가기](https://github.com/sungjw0408/DKU_Capstone2/tree/develop) |
+
+최종 제출 문서는 `main` 브랜치에, 앱 소스 코드는 `develop` 브랜치에 정리되어 있습니다.
 
 ---
 
 ## 📚 개발 문서
 
-- [Git 협업 가이드](docs/GIT_GUIDE.md)
-- [문서 분석 평가 안내](backend/eval/README.md)
+- [문서 분석 평가 안내](https://github.com/sungjw0408/DKU_Capstone2/blob/develop/backend/eval/README.md)
+- [소스 코드 및 프로젝트 구조](https://github.com/sungjw0408/DKU_Capstone2/tree/develop)
