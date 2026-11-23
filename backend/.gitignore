@@ -6,3 +6,4 @@ __pycache__/
 serviceAccount*.json
 /data/
 eval/results/
+eval/models/

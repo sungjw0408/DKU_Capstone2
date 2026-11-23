@@ -1,4 +1,5 @@
 from functools import lru_cache
+from pydantic import Field
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -22,6 +23,12 @@ class Settings(BaseSettings):
     review_threshold: int = 80
     timezone: str = "Asia/Seoul"
     cors_origins: list[str] = ["*"]
+
+    category_model_enabled: bool = False
+    category_model_path: str = "eval/models/category_v4/model.joblib"
+    category_model_threshold: float = Field(
+        default=0.5, ge=0, le=1
+    )
 
 
 @lru_cache
